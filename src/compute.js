@@ -107,7 +107,17 @@
 		}
 		var watches = this._toWatch;
 		var graph = watches.order.reduce(function(deps, id) {
-			return _.extend(watches.computes[id].graph(), deps);
+			var graph = {};
+
+			var c = watches.computes[id];
+
+			if (c.graph) {
+				graph[c.computeName] = c.graph();
+			} else {				
+				graph[c.computeName] = true;
+			}
+
+			return _.extend(graph, deps);
 		}, {});
 		if (!bound) {
 			this.unbind();
@@ -159,6 +169,25 @@
 		}, this);
 	};
 
+	function namespacedGraph(makeGraph, name) {
+		if (!makeGraph) {
+			return false;
+		}
+		function namespace(obj) {
+			if (obj === true) {
+				return obj;
+			}
+			var result = {};
+			_.each(obj, function(value, key) {
+				result[name + ":" + key] = namespace(value);
+			});
+			return result;
+		}
+		return function() {
+			return namespace(makeGraph());
+		};
+	}
+
 	function Computes() {
 		var accessed = function() {};
 		var batch, batchDepth;
@@ -181,18 +210,24 @@
 			};
 			var oldAccessed = accessed;
 			accessed = function(compute, id) {
-				// if this is another compute, bind it *now* so we are 
+				// if this is one of our computes, monitor it *now* so we are
 				// observing just it and not its dependencies
-				if (compute.__monitor) {
-					var monitor = compute.__monitor;
-					if (!monitor.bound) {
-						monitor.bind();
-					}					
+				if (compute.track) {
+					compute.track();
 				}
 				records.order.push(id);
 				records.computes[id] = compute;
 			};
-			fn();
+			connected.reduce(function(fn, connect, i) {
+				var prefix = connect.name || ("connect-" + i);
+				return function() {
+					connect.record(fn, function(compute, id) {
+						compute.computeName = prefix + ":" + (compute.computeName || id);
+						compute.graph = namespacedGraph(compute.graph, prefix);
+						accessed(compute, "connected:" + i + ":" + id);
+					});
+				};
+			}, fn)();
 			accessed = oldAccessed;
 			return records;
 		}
@@ -224,12 +259,6 @@
 			holder.__listeners = listeners;
 
 			holder.computeName = name || id;
-
-			holder.graph = function() {
-				var o = {};
-				o[holder.computeName] = true;
-				return o;
-			};
 
 			return holder;
 		}
@@ -280,13 +309,16 @@
 
 			wrapper.__listeners = listeners;
 			wrapper.__monitor = monitor;
+			wrapper.track = function() {
+				if (!monitor.bound) {
+					monitor.bind();
+				}
+			};
 
-			wrapper.computeName = name || fn.name;
+			wrapper.computeName = name || fn.name || id;
 
 			wrapper.graph = function() {
-				var o = {};
-				o[wrapper.computeName] = monitor.graph();
-				return o;
+				return monitor.graph();
 			};
 
 			return wrapper;
@@ -313,6 +345,11 @@
 			}
 		};
 
+		var connected = [];
+		make.connect = function(api) {
+			connected.push(api);			
+		};
+
 		/**
 		 * Debugging helper. Creates a GraphViz graph of the given computes.
 		 */
@@ -328,11 +365,7 @@
 				}));
 			}
 			var deps = _.flatten(_.toArray(arguments).map(function(c) {
-				var graph = c.graph();
-				var keys = Object.keys(graph);
-				return _.flatten(keys.map(function(key) {
-					return flatDeps(graph[key], key);
-				}));
+				return flatDeps(c.graph(), c.computeName);
 			}));
 
 			deps.sort();

@@ -19,12 +19,21 @@ module.exports = function(grunt) {
       compute: {
         options: {
           bundleOptions: {
-            standalone: "mu.compute",
+            standalone: "computejs",
           },
         },
         src: "src/compute.js",
         dest: "dist/compute.js"
-      }
+      },
+      backboneCompute: {
+        options: {
+          bundleOptions: {
+            standalone: "computejs.backbone",
+          },
+        },
+        src: "src/backbone-compute.js",
+        dest: "dist/backbone-compute.js"
+      },
     }
   });
 
@@ -34,6 +43,8 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-watch');
 
   // Default task.
-  grunt.registerTask('default', ['simplemocha:all', "browserify:compute"]);
+  grunt.registerTask('default', ['simplemocha:all',
+      "browserify:compute",
+      "browserify:backboneCompute"]);
 
 };

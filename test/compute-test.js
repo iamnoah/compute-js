@@ -188,12 +188,10 @@ describe("compute", function() {
 
 		it("should recursively get dependencies", function() {
 			f.graph().should.eql({
-				foo: {
-					a: true,
-					b: true,
-					double: {
-						c: true,
-					},
+				a: true,
+				b: true,
+				double: {
+					c: true,
 				},
 			});
 		});
