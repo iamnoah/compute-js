@@ -171,4 +171,43 @@ describe("compute", function() {
 			c.offChange(count);
 		});
 	});
+
+	describe("graph", function() {
+		var a = compute(1, "a");
+		var b = compute(2, "b");
+		var c = compute(3, "c");
+		var d = compute(function double() {
+			return c() * 2;
+		});
+		var f = compute(function() {
+			return a() * b() * d();
+		}, null, "foo");
+		var g = compute(function() {
+			return a() * b() * c();
+		}, null, "bar");
+
+		it("should recursively get dependencies", function() {
+			f.graph().should.eql({
+				foo: {
+					a: true,
+					b: true,
+					double: {
+						c: true,
+					},
+				},
+			});
+		});
+
+		it("should visualize dependencies", function() {
+			compute.vizualize(f, g).should.eql("digraph dependencies {\n"+
+				"bar -> a;\n"+
+				"bar -> b;\n"+
+				"bar -> c;\n"+
+				"double -> c;\n"+
+				"foo -> a;\n"+
+				"foo -> b;\n"+
+				"foo -> double;\n"+
+			"}");
+		});
+	});
 });

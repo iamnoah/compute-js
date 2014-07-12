@@ -6890,6 +6890,20 @@
 			this._toWatch.computes[id].onChange(this.onChange);
 		}, this);
 	};
+	Monitor.prototype.graph = function() {
+		var bound = this.bound;
+		if (!this._toWatch) {
+			this.bind();
+		}
+		var watches = this._toWatch;
+		var graph = watches.order.reduce(function(deps, id) {
+			return _.extend(watches.computes[id].graph(), deps);
+		}, {});
+		if (!bound) {
+			this.unbind();
+		}
+		return graph;
+	};
 	Monitor.prototype.onChange = function() {
 		var oldVal = this.value;
 		this.bind();
@@ -6957,6 +6971,14 @@
 			};
 			var oldAccessed = accessed;
 			accessed = function(compute, id) {
+				// if this is another compute, bind it *now* so we are 
+				// observing just it and not its dependencies
+				if (compute.__monitor) {
+					var monitor = compute.__monitor;
+					if (!monitor.bound) {
+						monitor.bind();
+					}					
+				}
 				records.order.push(id);
 				records.computes[id] = compute;
 			};
@@ -6965,7 +6987,7 @@
 			return records;
 		}
 		// Simple observable wrapper around a value.
-		function valueCompute(value) {
+		function valueCompute(value, name) {
 			var listeners = new Listeners();
 			var id = "V" + (++uid);
 			function holder(v) {
@@ -6991,10 +7013,18 @@
 			};
 			holder.__listeners = listeners;
 
+			holder.computeName = name || id;
+
+			holder.graph = function() {
+				var o = {};
+				o[holder.computeName] = true;
+				return o;
+			};
+
 			return holder;
 		}
 		// Wraps a computation of value computes.
-		function compute(fn, ctx) {
+		function compute(fn, ctx, name) {
 			var listeners = new Listeners();
 			var id = "c" + (++uid);
 			function wrapper(newVal) {
@@ -7041,11 +7071,19 @@
 			wrapper.__listeners = listeners;
 			wrapper.__monitor = monitor;
 
+			wrapper.computeName = name || fn.name;
+
+			wrapper.graph = function() {
+				var o = {};
+				o[wrapper.computeName] = monitor.graph();
+				return o;
+			};
+
 			return wrapper;
 		}
-		function make(c) {
+		function make(c, ctx, name) {
 			return typeof c === "function" ?
-				compute(c) : valueCompute(c);
+				compute(c, ctx, name) : valueCompute(c, ctx);
 		}
 		make.value = valueCompute;
 		make.startBatch = function() {
@@ -7064,6 +7102,36 @@
 				b.send();
 			}
 		};
+
+		/**
+		 * Debugging helper. Creates a GraphViz graph of the given computes.
+		 */
+		make.vizualize = function() {
+			function flatDeps(graph, depsOf) {
+				var keys = Object.keys(graph);
+				return _.flatten(keys.map(function(key) {
+					var deps = [depsOf + " -> " + key + ";"];
+					if (graph[key] !== true) {
+						return deps.concat(flatDeps(graph[key], key));
+					}
+					return deps;
+				}));
+			}
+			var deps = _.flatten(_.toArray(arguments).map(function(c) {
+				var graph = c.graph();
+				var keys = Object.keys(graph);
+				return _.flatten(keys.map(function(key) {
+					return flatDeps(graph[key], key);
+				}));
+			}));
+
+			deps.sort();
+
+			return "digraph dependencies {\n" +
+				deps.join("\n") +
+			"\n}";
+		};
+
 		return make;
 	}
 
