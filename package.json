@@ -1,14 +1,14 @@
 {
-  "name": "mu",
-  "version": "0.0.12",
-  "description": "Functional Model Utilities",
-  "main": "src/mu.js",
+  "name": "compute-js",
+  "version": "0.0.1",
+  "description": "Standalone Computed Functions",
+  "main": "src/compute.js",
   "engines": {
     "node": ">= 0.10.0"
   },
   "author": "noah",
   "license": "MIT",
-  "repository": "https://github.com/iamnoah/mu",
+  "repository": "https://github.com/iamnoah/compute-js",
   "devDependencies": {
     "grunt": "~0.4.2",
     "grunt-contrib-jshint": "~0.7.2",
@@ -17,7 +17,8 @@
     "should": "^3.3.1",
     "grunt-simple-mocha": "^0.4.0",
     "browserify": "^4.0.0",
-    "grunt-browserify": "^2.0.8"
+    "grunt-browserify": "^2.0.8",
+    "backbone": "^1.1.2"
   },
   "dependencies": {
     "lodash": "^2.4.1"
