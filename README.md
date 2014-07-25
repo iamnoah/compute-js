@@ -84,7 +84,7 @@ Computed functions work by recording access to value computes while the function
 
 ### Backbone
 
-backbone-compute.js hooks into Backbone.Model's `get` to give you computes. Just use `model.get` to read values from your models and you can created compute functions with them. e.g.,
+backbone-compute.js hooks into Backbone.Model's `get` (and other access methods) to give you computes. Just use `model.get` to read values from your models and you can created compute functions with them. e.g.,
 
 ```
 var compute = require("backbone-compute");
@@ -109,6 +109,8 @@ model.set("foo", 1);
 
 $(".sum").text() === "322"
 ```
+
+In addition to `get` and `has`, all the underscore methods (`keys`, `values`, `pairs`, `invert`, `pick`, `omit`) and `toJSON` are supported. Since they will give you a plain object to read from, a compute that depends on them will recompute any time that Model changes. You might think that is inefficient, but if you are dealing with a lot of properties, it can actually be more efficient than binding to every single property.
 
 ### Other
 
