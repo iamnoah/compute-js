@@ -1,7 +1,7 @@
 (function() {
 	"use strict";
 
-	var _ = require("lodash");
+	var _ = require("./_");
 
 	var uid = 0;
 	// Standard Observer pattern.
@@ -49,7 +49,7 @@
 		var fn = this._listeners[id];
 		delete this._listeners[id];
 		delete fn[this.NS];
-		var index = _.indexOf(this._ordered, fn);
+		var index = this._ordered.indexOf(fn);
 		if (~index) {
 			this._ordered.splice(index, 1);
 		}

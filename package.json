@@ -20,9 +20,6 @@
     "grunt-browserify": "^2.0.8",
     "backbone": "^1.1.2"
   },
-  "dependencies": {
-    "lodash": "^2.4.1"
-  },
   "scripts": {
     "test": "mocha"
   }
