@@ -106,6 +106,55 @@ describe("compute", function() {
 			rebind().should.eql(ab());
 			rebind.offChange("countChange");
 		});
+
+		it("should cache intermediate values and coalesce changes", function() {
+			var root = compute.value({
+				a: 1,
+				b: 2,
+			});
+
+			var a = compute(function() {
+				return root().a;
+			});
+			var b = compute(function() {
+				return root().b;
+			});
+
+			var c = compute(function() {
+				return a() + b();
+			});
+
+			c.onChange(function() {
+				false.should.be.true;
+			}, "should not change");
+
+			root({
+				a: 1,
+				b: 2,
+				c: 3,
+			});
+			c().should.eql(3);
+
+			c.offChange("should not change");
+
+			var change = 0;
+			c.onChange(function() {
+				c().should.eql(5);
+				change++;
+			}, "should coalesce changes");
+
+			root({
+				a: 2,
+				b: 3,
+				c: 3,
+			});
+
+			// if there was more than 1 change, then there was a change event 
+			// publishing an inconsistent value
+			change.should.eql(1);
+
+			c.offChange("should coalesce changes");
+		});
 	});
 
 	describe("batching", function() {

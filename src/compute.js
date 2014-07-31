@@ -72,13 +72,29 @@
 	function Monitor(getValue, record, onWrite) {
 		this.id = "M" + (++uid);
 		this.get = function() {
-			this.value = getValue();
+			this._value = getValue();
 		}.bind(this);
 		this.record = record;
 		this.onWrite = onWrite;
 
+		this._dirtyListeners = new Listeners();
 		this.onChange = this.onChange.bind(this);
+		this.setDirty = this.setDirty.bind(this);
+		this.onDirty = this.onDirty.bind(this);
+		this.offDirty = this.offDirty.bind(this);
 	}
+	Monitor.prototype.onDirty = function(fn) {
+		this._dirtyListeners.add(fn);
+	};
+	Monitor.prototype.offDirty = function(fn) {
+		this._dirtyListeners.remove(fn);
+	};
+	Monitor.prototype.setDirty = function() {
+		if (!this.dirty) {
+			this._dirtyListeners.notify();
+		}
+		this.dirty = true;
+	};
 	Monitor.prototype.bind = function() {
 		// record what was accessed
 		var oldWatches = this._toWatch || {
@@ -94,10 +110,18 @@
 		var rmWatches = _.difference(oldIds, newIds);
 
 		_.each(rmWatches, function(id) {
-			oldWatches.computes[id].offChange(this.onChange);
+			var c = oldWatches.computes[id];
+			c.offChange(this.onChange);
+			if (c.offDirty) {
+				c.offDirty(this.setDirty);
+			}
 		}, this);
 		_.each(newWatches, function(id) {
-			this._toWatch.computes[id].onChange(this.onChange);
+			var c = this._toWatch.computes[id];
+			if (c.onDirty) {
+				c.onDirty(this.setDirty);
+			}
+			c.onChange(this.onChange);
 		}, this);
 	};
 	Monitor.prototype.graph = function() {
@@ -125,13 +149,17 @@
 		return graph;
 	};
 	Monitor.prototype.onChange = function() {
-		var oldVal = this.value;
+		var oldVal = this._value;
 		this.bind();
-		this.onWrite(oldVal, this.value);
+		this.onWrite(oldVal, this._value);
 	};
 	Monitor.prototype.unbind = function() {
 		_.each(_.uniq(this._toWatch.order), function(id) {
-			this._toWatch.computes[id].offChange(this.onChange);
+			var c = this._toWatch.computes[id];
+			c.offChange(this.onChange);
+			if (c.offDirty) {
+				c.offDirty(this.setDirty);
+			}
 		}, this);
 		this._toWatch = false;
 	};
@@ -140,7 +168,16 @@
 			get: function() {
 				return !!this._toWatch;
 			}
-		}
+		},
+		value: {
+			get: function() {
+				// if dirty, recompute
+				if (this.dirty) {
+					this.bind();
+				}
+				return this._value;
+			},
+		},
 	});
 
 	// batch of compute updates
@@ -234,6 +271,7 @@
 		// Simple observable wrapper around a value.
 		function valueCompute(value, name) {
 			var listeners = new Listeners();
+			var dirty = new Listeners();
 			var id = "V" + (++uid);
 			function holder(v) {
 				if (arguments.length) {
@@ -242,12 +280,19 @@
 				return holder.get();
 			}
 			holder.get = function() {
-				accessed(holder, id);
+				accessed({
+					onChange: holder.onChange,
+					offChange: holder.offChange,
+					computeName: holder.computeName,
+					onDirty: dirty.add.bind(dirty),
+					offDirty: dirty.remove.bind(dirty),	
+				}, id);
 				return value;
 			};
 			holder.set = function(newVal) {
 				var oldVal = value;
 				value = newVal;
+				dirty.notify();
 				afterBatch(listeners, oldVal, newVal);
 			};
 			holder.onChange = function(listener, key) {
@@ -274,7 +319,15 @@
 			}
 			var getter = fn.get || fn;
 			wrapper.get = function() {
-				accessed(wrapper, id);
+				accessed({
+					onChange: wrapper.onChange,
+					offChange: wrapper.offChange,
+					computeName: wrapper.computeName,
+					graph: wrapper.graph,
+					track: wrapper.track,
+					onDirty: monitor.onDirty,
+					offDirty: monitor.offDirty,
+				}, id);
 				// if currently bound, use the cached value
 				return !batch && monitor.bound ? monitor.value :
 					getter.call(ctx);
