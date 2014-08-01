@@ -3226,6 +3226,7 @@
 			}
 			c.onChange(this.onChange);
 		}, this);
+		this.dirty = false;
 	};
 	Monitor.prototype.graph = function() {
 		var bound = this.bound;
@@ -3458,7 +3459,9 @@
 
 			// the monitor is responsible for watching all the computes we use
 			// and notifying us when we recompute
-			var monitor = new Monitor(getter, record, function(oldVal, newVal) {
+			var monitor = new Monitor(function() {
+				return getter.call(ctx);
+			}, record, function(oldVal, newVal) {
 				afterBatch(listeners, oldVal, newVal);
 			});
 
