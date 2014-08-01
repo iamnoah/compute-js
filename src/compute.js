@@ -123,6 +123,7 @@
 			}
 			c.onChange(this.onChange);
 		}, this);
+		this.dirty = false;
 	};
 	Monitor.prototype.graph = function() {
 		var bound = this.bound;
