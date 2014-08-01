@@ -55,6 +55,28 @@ describe("compute", function() {
 			ab.offChange(countChange);
 		});
 
+		it("should take context as the 2nd parameter", function() {
+			var foo = compute(function() {
+				return this.bar(a(), b());
+			}, {
+				bar: function(a, b) {
+					return a + b;
+				},
+			});
+
+			foo().should.eql(6);
+
+			var changes = 0;
+			function countChange() {
+				changes++;
+			}
+			foo.onChange(countChange);
+			a(10);		
+			foo().should.eql(12);
+			changes.should.eql(1);
+			foo.offChange(countChange);
+		});
+
 		it("should notify with nested computes", function() {
 			var nested = compute(function() {
 				return ab() / b();
