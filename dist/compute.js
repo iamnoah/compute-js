@@ -10,7 +10,10 @@
 		});
 	};
 	exports.each = function(obj, iterator, ctx) {
-		if (obj && obj.forEach) {
+		if (!obj) {
+			return;
+		}
+		if (obj.forEach) {
 			return obj.forEach(iterator, ctx);
 		} else {
 			Object.keys(obj || {}).forEach(function(key) {
@@ -120,13 +123,14 @@
 	});
 
 	// Helper for monitoring the values getValue requires to compute.
-	function Monitor(getValue, record, onWrite) {
+	function Monitor(getValue, record, onWrite, opts) {
 		this.id = "M" + (++uid);
 		this.get = function() {
 			this._value = getValue();
 		}.bind(this);
 		this.record = record;
 		this.onWrite = onWrite;
+		this.opts = opts;
 
 		this._dirtyListeners = new Listeners();
 		this.onChange = this.onChange.bind(this);
@@ -188,9 +192,14 @@
 			var c = watches.computes[id];
 
 			if (c.graph) {
-				graph[c.computeName] = c.graph();
+				graph[id] = {
+					name: c.computeName,
+					dependencies: c.graph(),
+				};
 			} else {				
-				graph[c.computeName] = true;
+				graph[id] = {
+					name: c.computeName,
+				};
 			}
 
 			return _.extend(graph, deps);
@@ -280,6 +289,7 @@
 	function Computes() {
 		var accessed = function() {};
 		var batch, batchDepth;
+		var nsId = 0;
 		function afterBatch(listeners, oldVal, newVal) {
 			if (batch) {
 				batch.addChange(listeners, oldVal, newVal);
@@ -321,16 +331,18 @@
 			return records;
 		}
 		// Simple observable wrapper around a value.
-		function valueCompute(value, name) {
+		function valueCompute(opts) {
 			var listeners = new Listeners();
 			var dirty = new Listeners();
-			var id = "V" + (++uid);
+			var id = "V" + (++nsId);
+			var value = opts.value;
 			function holder(v) {
 				if (arguments.length) {
 					return holder.set(v);
 				}
 				return holder.get();
 			}
+			holder.cid = id;
 			holder.get = function() {
 				accessed({
 					onChange: holder.onChange,
@@ -355,21 +367,21 @@
 			};
 			holder.__listeners = listeners;
 
-			holder.computeName = name || id;
+			holder.computeName = "" + (opts.name || value || id);
 
 			return holder;
 		}
 		// Wraps a computation of value computes.
-		function compute(fn, ctx, name) {
+		function compute(opts) {			
 			var listeners = new Listeners();
-			var id = "c" + (++uid);
+			var id = "C" + (++nsId);
 			function wrapper(newVal) {
 				if (arguments.length) {
 					return wrapper.set(newVal);
 				}
 				return wrapper.get();
 			}
-			var getter = fn.get || fn;
+			var getter = opts.get;
 			wrapper.get = function() {
 				accessed({
 					onChange: wrapper.onChange,
@@ -382,12 +394,12 @@
 				}, id);
 				// if currently bound, use the cached value
 				return !batch && monitor.bound ? monitor.value :
-					getter.call(ctx);
+					getter.call(opts.ctx);
 			};
 
-			var setter = fn.set || fn;
-			wrapper.set = function(newValue) {
-				return setter.call(ctx, newValue);
+			var setter = opts.set;
+			wrapper.set = setter && function(newValue) {
+				return setter.call(opts.ctx, newValue);
 			};
 
 			wrapper.onChange = function(listener, key) {
@@ -408,10 +420,10 @@
 			// the monitor is responsible for watching all the computes we use
 			// and notifying us when we recompute
 			var monitor = new Monitor(function() {
-				return getter.call(ctx);
+				return getter.call(opts.ctx);
 			}, record, function(oldVal, newVal) {
 				afterBatch(listeners, oldVal, newVal);
-			});
+			}, opts);
 
 
 			wrapper.__listeners = listeners;
@@ -422,7 +434,9 @@
 				}
 			};
 
-			wrapper.computeName = name || fn.name || id;
+			wrapper.cid = id;
+
+			wrapper.computeName = opts.name || opts.get.name || id;
 
 			wrapper.graph = function() {
 				return monitor.graph();
@@ -431,10 +445,30 @@
 			return wrapper;
 		}
 		function make(c, ctx, name) {
-			return typeof c === "function" ?
-				compute(c, ctx, name) : valueCompute(c, ctx);
+			var opts;
+			if (typeof c === "function") {
+				opts = {
+					get: c,
+					set: c,
+					ctx: ctx,
+					name: name,
+				};
+				return compute(opts);
+			}
+			if (typeof c.get === "function" && c.get.length === 0) {
+				return compute(c);
+			}
+			ctx = typeof ctx === "string" ? { name: ctx } : ctx;
+			return valueCompute(_.extend({}, ctx || {}, {
+				value: c
+			}));
 		}
-		make.value = valueCompute;
+		make.value = function(opts) {
+			opts = opts && opts.hasOwnProperty("value") ? opts : {
+				value: opts,
+			};
+			return valueCompute(opts);
+		};
 		make.startBatch = function() {
 			batchDepth++;
 			batch = batch || new Batch();
@@ -461,23 +495,32 @@
 		 * Debugging helper. Creates a GraphViz graph of the given computes.
 		 */
 		make.vizualize = function() {
+			var nodes = {};
 			function flatDeps(graph, depsOf) {
 				var keys = Object.keys(graph);
-				return _.flatten(keys.map(function(key) {
-					var deps = [depsOf + " -> " + key + ";"];
-					if (graph[key] !== true) {
-						return deps.concat(flatDeps(graph[key], key));
+				nodes[depsOf] = nodes[depsOf] || graph.name;
+				return _.flatten(keys.map(function(id) {
+					var deps = [depsOf + " -> " + id + ";"];
+					nodes[id] = nodes[id] || graph[id].name;
+					if (graph[id].dependencies) {
+						return deps.concat(
+							flatDeps(graph[id].dependencies, id));
 					}
 					return deps;
 				}));
 			}
 			var deps = _.flatten(_.toArray(arguments).map(function(c) {
-				return flatDeps(c.graph(), c.computeName);
+				nodes[c.cid] = c.computeName;
+				return flatDeps(c.graph(), c.cid);
 			}));
 
 			deps.sort();
+			var nodeNames = Object.keys(nodes).map(function(id) {
+				return id + '[label="' + nodes[id] + '\\n(' + id + ')"];';
+			}).sort();
 
-			return "digraph dependencies {\n" +
+			return "strict digraph dependencies {\n" +
+				nodeNames.join("\n") + "\n" +
 				deps.join("\n") +
 			"\n}";
 		};

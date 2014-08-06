@@ -9,7 +9,10 @@
 		});
 	};
 	exports.each = function(obj, iterator, ctx) {
-		if (obj && obj.forEach) {
+		if (!obj) {
+			return;
+		}
+		if (obj.forEach) {
 			return obj.forEach(iterator, ctx);
 		} else {
 			Object.keys(obj || {}).forEach(function(key) {

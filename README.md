@@ -72,6 +72,15 @@ var capitalized = compute(function(newValue) {
 	}
 	return string.get().toUpperCase();
 });
+// OR, arguably easier to read:
+var capitalized = compute({
+	get: function() {
+		return string.get().toUpperCase();
+	},
+	set: function(newValue) {
+		string.set(newValue.toLowerCase());
+	},
+});
 capitalized() === "HI"
 
 capitalized("HELLO")
@@ -124,10 +133,35 @@ During a batch, computes will still return the correct value. The only affect a 
 
 ## Vi(z)ualizing
 
+
+
 As you compose a lot of computes together, it can become difficult to figure out where a value is coming from. To help you out, computes can ouput their current dependencies in [GraphViz](http://www.graphviz.org/) format:
 
 ```
 console.log(compute.vizualize(aCompute, anotherCompute, etc));
+```
+
+You can run it through dot to get an image like this:
+
+![Viz Graph](https://chart.googleapis.com/chart?chl=strict+digraph+dependencies+%7B%0D%0AC4%5Blabel%3D%22double%5Cn(C4)%22%5D%3B%0D%0AC5%5Blabel%3D%22foo%5Cn(C5)%22%5D%3B%0D%0AC6%5Blabel%3D%22bar%5Cn(C6)%22%5D%3B%0D%0AV1%5Blabel%3D%22a%5Cn(V1)%22%5D%3B%0D%0AV2%5Blabel%3D%22b%5Cn(V2)%22%5D%3B%0D%0AV3%5Blabel%3D%22c%5Cn(V3)%22%5D%3B%0D%0AC4+-%3E+V3%3B%0D%0AC5+-%3E+C4%3B%0D%0AC5+-%3E+V1%3B%0D%0AC5+-%3E+V2%3B%0D%0AC6+-%3E+V1%3B%0D%0AC6+-%3E+V2%3B%0D%0AC6+-%3E+V3%3B%0D%0A%7D&cht=gv "From the output of the graph in test/compute-test.js")
+
+The part in () is the internal id of the compute. `C` indicates a computed function, while `V` indicates a value compute.
+
+To make the output more useful, you should name your computes:
+```
+var foo = compute.value({
+	value: "initialValue", // required
+	name: "foo",
+});
+
+var bar = compute({
+	get: ...,
+	name: "bar",
+});
+
+// named functions are detected and their name is used if no other name is given
+function baz() { ... }
+var bazCompute = compute(baz);
 ```
 
 ## Acknowledgements

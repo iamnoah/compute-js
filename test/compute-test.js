@@ -244,38 +244,54 @@ describe("compute", function() {
 	});
 
 	describe("graph", function() {
-		var a = compute(1, "a");
-		var b = compute(2, "b");
-		var c = compute(3, "c");
-		var d = compute(function double() {
+		var ns = new compute.constructor();
+		var a = ns(1, "a");
+		var b = ns(2, "b");
+		var c = ns(3, "c");
+		var d = ns(function double() {
 			return c() * 2;
 		});
-		var f = compute(function() {
+		var f = ns(function() {
 			return a() * b() * d();
 		}, null, "foo");
-		var g = compute(function() {
+		var g = ns(function() {
 			return a() * b() * c();
 		}, null, "bar");
 
 		it("should recursively get dependencies", function() {
 			f.graph().should.eql({
-				a: true,
-				b: true,
-				double: {
-					c: true,
+				V1: {
+					name: "a",
+				},
+				V2: {
+					name: "b",
+				},
+				C4: {
+					name: "double",
+					dependencies: {
+						V3: {
+							name: "c",
+						}
+					}
 				},
 			});
 		});
 
 		it("should visualize dependencies", function() {
-			compute.vizualize(f, g).should.eql("digraph dependencies {\n"+
-				"bar -> a;\n"+
-				"bar -> b;\n"+
-				"bar -> c;\n"+
-				"double -> c;\n"+
-				"foo -> a;\n"+
-				"foo -> b;\n"+
-				"foo -> double;\n"+
+			ns.vizualize(f, g).should.eql("strict digraph dependencies {\n"+
+				'C4[label="double\\n(C4)"];\n' +
+				'C5[label="foo\\n(C5)"];\n' +
+				'C6[label="bar\\n(C6)"];\n' +
+				'V1[label="a\\n(V1)"];\n' +
+				'V2[label="b\\n(V2)"];\n' +
+				'V3[label="c\\n(V3)"];\n' +
+				"C4 -> V3;\n"+
+				"C5 -> C4;\n"+
+				"C5 -> V1;\n"+
+				"C5 -> V2;\n"+
+				"C6 -> V1;\n"+
+				"C6 -> V2;\n"+
+				"C6 -> V3;\n"+
 			"}");
 		});
 	});
