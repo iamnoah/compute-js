@@ -127,13 +127,17 @@ If you need to write your own integration, I'd recommend starting with the backb
 
 ## Batching
 
+Batching can significantly improve performance if you need to make changes to several computes at the same time. In some cases, it can prevent errors by preventing inconsistent state from being used in a recompute.
+
 `compute.startBatch` and `compute.endBatch` work as you would expect. While in a batch, `onChange` handlers are suspended. When the batch is ended, they will all fire if their values have changed. If you call `startBatch` multiple times, you have to call `endBatch` an equivalent number of times before the batch is ended.
 
 During a batch, computes will still return the correct value. The only affect a batch has is to suspend change events.
 
+If a compute's value changes during a batch, but returns to its original value by the end of the batch, no change event will trigger.
+
+See tests/compute-test.js for a demonstration of batching.
+
 ## Vi(z)ualizing
-
-
 
 As you compose a lot of computes together, it can become difficult to figure out where a value is coming from. To help you out, computes can ouput their current dependencies in [GraphViz](http://www.graphviz.org/) format:
 
