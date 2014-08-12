@@ -177,6 +177,54 @@ describe("compute", function() {
 
 			c.offChange("should coalesce changes");
 		});
+
+		it("should always notify on changes", function() {
+			var root = compute.value({
+				a: false,
+				b: 2,
+			});
+
+			// Because a short circuits initially, it will be bound to root
+			// before b, and therefore will always recompute first.
+			// This test was added because when a accessed the value of b while
+			// recomputing, a's dirty flag was cleared without a's listeners 
+			// being notified.
+			var a = compute(function() {
+				return root().a && b();
+			});
+			var b = compute(function() {
+				return root().b;
+			});
+
+			b.get().should.eql(2);
+			function ignore() {
+			}
+			function count() {
+				changes++;
+			}
+			var changes = 0;
+			a.onChange(ignore);
+			b.onChange(count);
+
+
+			root.set({
+				a: true,
+				b: 2,
+			});
+			changes.should.eql(0);
+			b.get().should.eql(2);
+
+			root.set({
+				a: true,
+				b: 3,
+			});
+			b.get().should.eql(3);
+			// b should have changed
+			changes.should.eql(1);
+
+			a.offChange(ignore);
+			b.offChange(count);
+		});
 	});
 
 	describe("batching", function() {

@@ -150,12 +150,13 @@
 		}
 		this.dirty = true;
 	};
-	Monitor.prototype.bind = function() {
+	Monitor.prototype.recompute = function() {
 		// record what was accessed
 		var oldWatches = this._toWatch || {
 			order: [],
 			computes: {}
 		};
+		this.dirty = false;
 		this._toWatch = this.record(this.get);
 
 		// update what we are watching
@@ -178,12 +179,11 @@
 			}
 			c.onChange(this.onChange);
 		}, this);
-		this.dirty = false;
 	};
 	Monitor.prototype.graph = function() {
 		var bound = this.bound;
 		if (!this._toWatch) {
-			this.bind();
+			this.recompute();
 		}
 		var watches = this._toWatch;
 		var graph = watches.order.reduce(function(deps, id) {
@@ -210,8 +210,12 @@
 		return graph;
 	};
 	Monitor.prototype.onChange = function() {
+		// if dirty, recompute and notify listeners if the result changed
+		if (!this.dirty) {
+			return;
+		}
 		var oldVal = this._value;
-		this.bind();
+		this.recompute();
 		this.onWrite(oldVal, this._value);
 	};
 	Monitor.prototype.unbind = function() {
@@ -232,10 +236,7 @@
 		},
 		value: {
 			get: function() {
-				// if dirty, recompute
-				if (this.dirty) {
-					this.bind();
-				}
+				this.onChange();
 				return this._value;
 			},
 		},
@@ -321,9 +322,17 @@
 				var prefix = connect.name || ("connect-" + i);
 				return function() {
 					connect.record(fn, function(compute, id) {
-						compute.computeName = prefix + ":" + (compute.computeName || id);
-						compute.graph = namespacedGraph(compute.graph, prefix);
-						accessed(compute, "connected:" + i + ":" + id);
+						accessed({
+							onChange: compute.onChange,
+							offChange: compute.offChange,
+							// XXX dirty is just an internal concept, so just 
+							// bind a 2nd listener to mark dirty when an extenal
+							// compute changes
+							onDirty: compute.onChange,
+							offDirty: compute.offChange,
+							computeName: prefix + ":" + (compute.computeName || id),
+							graph: namespacedGraph(compute.graph, prefix),
+						}, "connected:" + i + ":" + id);
 					});
 				};
 			}, fn)();
@@ -407,7 +416,7 @@
 				// our value depends on
 				listeners.add(listener, key);
 				if (!monitor.bound) {
-					monitor.bind();
+					monitor.recompute();
 				}
 			};
 			wrapper.offChange = function(listener) {
@@ -430,7 +439,7 @@
 			wrapper.__monitor = monitor;
 			wrapper.track = function() {
 				if (!monitor.bound) {
-					monitor.bind();
+					monitor.recompute();
 				}
 			};
 
