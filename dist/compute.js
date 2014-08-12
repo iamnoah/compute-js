@@ -464,7 +464,7 @@
 				};
 				return compute(opts);
 			}
-			if (typeof c.get === "function" && c.get.length === 0) {
+			if (c && typeof c.get === "function" && c.get.length === 0) {
 				return compute(c);
 			}
 			ctx = typeof ctx === "string" ? { name: ctx } : ctx;

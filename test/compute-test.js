@@ -6,6 +6,12 @@ require("should");
 describe("compute", function() {
 	var c = compute(123);
 	describe("as a value holder", function() {
+		it("should handle null", function() {
+			var n = compute.value(null);
+			(n() === null).should.be.true;
+			n = compute(null);
+			(n() === null).should.be.true;
+		});
 		it("should return the computed value", function() {
 			c().should.eql(123);
 		});
