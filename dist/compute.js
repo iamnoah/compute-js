@@ -146,9 +146,9 @@
 	};
 	Monitor.prototype.setDirty = function() {
 		if (!this.dirty) {
+			this.dirty = true;
 			this._dirtyListeners.notify();
 		}
-		this.dirty = true;
 	};
 	Monitor.prototype.recompute = function() {
 		// record what was accessed

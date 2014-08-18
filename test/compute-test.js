@@ -231,6 +231,10 @@ describe("compute", function() {
 			a.offChange(ignore);
 			b.offChange(count);
 		});
+
+		it("should not create a dirty loop", function() {
+			// TODO
+		});
 	});
 
 	describe("batching", function() {
