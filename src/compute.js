@@ -292,6 +292,25 @@
 			connected.push(c);
 		};
 
+		make.graph = function() {
+			return graph.toJSON();
+		};
+
+		make.vizualize = function(g) {
+			g = g || make.graph();
+			var lines = [];
+			_.each(g, function(node, id) {
+				lines.push(id + '[label="' + (node.name || id) + '\\n(' + id + ')"];');
+
+				_.each(node.dependencies || [], function(t, depId) {
+					lines.push(id + " -> " + depId);
+				});
+			});
+			lines.sort();
+			return "strict digraph dependencies {\n\t" +
+				lines.join("\n\t") + "\n}";
+		};
+
 		return make;
 	}
 

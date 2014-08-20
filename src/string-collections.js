@@ -15,6 +15,14 @@
 		return result;
 	}
 
+	function asObject(iterable) {
+		var result = {};
+		(iterable || []).forEach(function(value, key) {
+			result[key] = value;
+		});
+		return result;
+	}
+
 	// define shims for Map and Sets. Our versions only support string
 	// keys in Map and string values in sets.
 	var global = (function() {
@@ -46,7 +54,6 @@
 		Map.prototype.set = function(key, value) {
 			assertString(key, "Map.set(key)");
 			this.__store[key] = value;
-			return this;
 		};
 		Map.prototype.has = function(key) {
 			assertString(key, "Map.has(key)");
@@ -154,6 +161,7 @@
 
 	module.exports = {
 		asArray: asArray,
+		asObject: asObject,
 		Map: Map,
 		Set: Set,
 		MapWrapper: MapWrapper,

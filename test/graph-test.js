@@ -20,10 +20,68 @@ describe("graph", function() {
 		graph.node("1").dependsOn("false");
 		graph.node("abc").dependsOn("def");
 
-		contains(graph.activeNodes(), ["2", "4", "true", "1", "abc", "def", "false"]);
+		graph.toJSON().should.eql({
+			abc: {
+				dependencies: {
+					def: true,
+				},
+			},
+			def: {
+				dependencies: {},				
+			},
+			1: {
+				dependencies: {
+					false: true,
+				},
+			},
+			2: {
+				dependencies: {
+					1: true,
+				},
+			},
+			4: {
+				dependencies: {
+					2: true,
+				},
+			},
+			false: {
+				dependencies: {},
+			},
+			true: {
+				dependencies: {
+					2: true,
+				},
+			},
+		});
 
 		graph.node("abc").noLongerDependsOn("def");
-		contains(["2", "4", "true", "1", "abc", "false"], graph.activeNodes());
+
+		graph.toJSON().should.eql({
+			1: {
+				dependencies: {
+					false: true,
+				},
+			},
+			2: {
+				dependencies: {
+					1: true,
+				},
+			},
+			4: {
+				dependencies: {
+					2: true,
+				},
+			},
+			false: {
+				dependencies: {},
+			},
+			true: {
+				dependencies: {
+					2: true,
+				},
+			},
+		});
+		
 	});
 	it("should support traversal of dependents", function() {
 		var graph = new Graph();

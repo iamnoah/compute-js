@@ -3,6 +3,7 @@
 
 	var _ = require("./_");
 	var asArray = require("./string-collections").asArray;
+	var asObject = require("./string-collections").asObject;
 	var Map = require("./string-collections").Map;
 	var Set = require("./string-collections").Set;
 	var MapWrapper = require("./string-collections").MapWrapper;
@@ -64,15 +65,6 @@
 	}
 
 	_.extend(Graph.prototype, {
-		activeNodes: function() {
-			var keys = new Set();
-			function addKey(value, key) {
-				keys.add(key);
-			}
-			this._dependsOn.forEach(addKey);
-			this._dependedOnBy.forEach(addKey);
-			return asArray(keys);
-		},
 		// TODO check for cycles in dev mode
 		dependencyOrder: function(nodes) {
 			// first we need to find all the nodes that depend on the given nodes
@@ -134,14 +126,18 @@
 				},
 			};
 		},
-		viz: function() {
-			var edges = [];
+		toJSON: function() {
+			var result = {};
 			this._dependsOn.forEach(function(deps, node) {
-				deps.forEach(function(dep) {
-					edges.push(node + " -> " + dep + ";");
+				result[node] = _.extend(asObject(this._nodeData.get(node) || {}), {
+					dependencies: asArray(deps).reduce(function(deps, dep) {
+						result[dep] = result[dep] || { dependencies: {} };
+						deps[dep] = true;
+						return deps;
+					}, {}),
 				});
-			});
-			return "strict digraph {\n\t" + edges.join("\n\t") + "\n}";
+			}, this);
+			return result;
 		},
 	});
 
