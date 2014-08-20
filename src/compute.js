@@ -119,8 +119,10 @@
 			}
 			holder.cid = id;
 			holder.get = function() {
-				if (accessed) {					
+				if (accessed) {
 					accessed(id);
+					// TODO if dev
+					graph.node(id).set("name", holder.computeName);
 				}
 				return value;
 			};
@@ -186,7 +188,8 @@
 				};
 				n.set("isCompute", true);
 				n.set("recompute", recompute);
-				n.set("cachedValue", getter());
+				n.set("cachedValue", record(getter));
+				n.set("name", wrapper.computeName);
 
 				_.difference(oldDeps, newDeps).forEach(function(id) {
 					n.noLongerDependsOn(id);
@@ -255,6 +258,38 @@
 				value: opts,
 			};
 			return valueCompute(opts);
+		};
+
+		var connected = [];
+		function record(fn) {
+			var result;
+			// Provide each connected compute with an access function that 
+			// creates a node in the graph that behaves like a value compute.
+			connected.reduce(function(fn, connected) {
+				return function() {
+					connected.record(fn, function(api, id) {
+						var name = "connected:" + connected.name + ":" + (api.computeName || id);
+						var cid = "connected_" + connected.name + "_" + id;
+
+						function update() {
+							afterBatch(cid, true, false);
+						}
+
+						var n = graph.node(cid);
+						n.set("name", name);
+						n.set("onRemove", function() {
+							api.offChange(update);
+						});
+						api.onChange(update);
+
+						accessed(cid);
+					});
+				};
+			}, function() { result = fn(); })();
+			return result;
+		}
+		make.connect = function(c) {
+			connected.push(c);
 		};
 
 		return make;

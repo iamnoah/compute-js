@@ -54,6 +54,10 @@
 	}
 
 	function clean(graph, name) {
+		var tearDown = graph._nodeData.get(name).get("onRemove");
+		if (tearDown) {
+			tearDown();
+		}
 		graph._dependsOn.delete(name);
 		graph._dependedOnBy.delete(name);
 		graph._nodeData.delete(name);

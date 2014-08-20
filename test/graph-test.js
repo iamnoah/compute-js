@@ -49,6 +49,22 @@ describe("graph", function() {
 		should(graph.node("b").get("mark")).not.eql.true;
 	});
 
+	it("should call onRemove when a node is removed", function() {
+		var graph = new Graph();
+		var removed = {};
+		function rm(name) {
+			removed[name] = true;
+		}
+		graph.node("a").dependsOn("b");
+		graph.node("a").set("onRemove", rm.bind(null, "a"));
+		graph.node("b").set("onRemove", rm.bind(null, "b"));
+		
+		removed.should.eql({});
+		graph.node("a").noLongerDependsOn("b");
+		removed.should.eql({a: true, b: true});
+	});
+
+
 	describe("dependencyOrder(node)", function() {
 		it("should return a correct topological sort", function() {
 			var graph = new Graph();
