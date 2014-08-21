@@ -1,6 +1,6 @@
 {
   "name": "compute-js",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.4",
   "homepage": "https://github.com/iamnoah/compute-js",
   "authors": [
     "noah <iamnoah@gmail.com>"
@@ -10,6 +10,7 @@
   "license": "MIT",
   "ignore": [
     "**/.*",
+    "Gruntfile.js",
     "node_modules",
     "bower_components",
     "src",
