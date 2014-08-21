@@ -1,0 +1,19 @@
+{
+  "name": "compute-js",
+  "version": "0.1.0-alpha.2",
+  "homepage": "https://github.com/iamnoah/compute-js",
+  "authors": [
+    "noah <iamnoah@gmail.com>"
+  ],
+  "description": "Standalone, flexible compute.",
+  "main": "dist/compute.js",
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "src",
+    "test",
+    "tests"
+  ]
+}
