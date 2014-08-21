@@ -88,14 +88,14 @@
 		// skip it.
 		var toNotify = this.toNotify;
 		function recompute(node) {
-			if (!graph.node(node).get("isCompute")) {
+			if (!graph.nodeData(node).get("isCompute")) {
 				// assuming that any node that is not a compute is a listener
 				toNotify.push(node);
 				return;
 			}
-			var oldVal = graph.node(node).get("cachedValue");
-			graph.node(node).get("recompute")();
-			var newVal = graph.node(node).get("cachedValue");
+			var oldVal = graph.nodeData(node).get("cachedValue");
+			graph.nodeData(node).get("recompute")();
+			var newVal = graph.nodeData(node).get("cachedValue");
 			return oldVal !== newVal;
 		}
 
@@ -107,9 +107,7 @@
 		graph.dependencyOrder(this.changed).filter(function(node) {
 			return !hasChanged(node);
 		}).forEach(function(node) {
-			var n = graph.node(node);
-			
-			if (n.dependencies().some(hasChanged)) {
+			if (graph.dependencies(node).some(hasChanged)) {
 				var changed = recompute(node);
 				if (changed) {
 					changedNodes.add(node);
@@ -120,7 +118,7 @@
 	};
 	Batch.prototype.send = function() {
 		_.uniq(this.toNotify).forEach(function(listener) {
-			var cb = this.graph.node(listener).get("listener");
+			var cb = this.graph.nodeData(listener).get("listener");
 			// XXX the listener may have been removed during the recompute
 			// process, so we can ignore it (as long as there is not a bug
 			// somewhere else.)
@@ -182,7 +180,7 @@
 				if (accessed) {
 					accessed(id);
 					// TODO if dev
-					graph.node(id).set("name", holder.computeName);
+					graph.nodeData(id).set("name", holder.computeName);
 				}
 				return value;
 			};
@@ -192,11 +190,12 @@
 				afterBatch(id, oldVal, newVal);
 			};
 			holder.onChange = function(listener) {
-				graph.node(listenerKey(listener, id)).dependsOn(id).
-					set("listener", listener);
+				var key = listenerKey(listener, id);
+				graph.dependsOn(key, id);
+				graph.nodeData(key).set("listener", listener);
 			};
 			holder.offChange = function(listener) {
-				graph.node(listenerKey(listener, id)).noLongerDependsOn(id);				
+				graph.noLongerDependsOn(listenerKey(listener, id), id);				
 			};
 
 			holder.computeName = "" + (opts.name || value || id);
@@ -213,7 +212,7 @@
 				return wrapper.get();
 			}
 			function ensureActive() {
-				if (!graph.node(id).hasDependents()) {
+				if (!graph.hasDependents(id)) {
 					// nothing was observing before, so create our node in the graph
 					recompute();
 				}
@@ -227,7 +226,7 @@
 					ensureActive();
 					accessed(id);
 				}
-				var n = graph.node(id);
+				var n = graph.nodeData(id);
 				return n.has("cachedValue") ? n.get("cachedValue") : getter();
 			};
 
@@ -239,8 +238,8 @@
 			// recompute ensures that the graph is updated with our most 
 			// current value and dependencies
 			function recompute() {
-				var n = graph.node(id);
-				var oldDeps = n.dependencies();
+				var n = graph.nodeData(id);
+				var oldDeps = graph.dependencies(id);
 				var newDeps = [];
 				var lastAccess = accessed;
 				accessed = function(id) {
@@ -251,22 +250,23 @@
 				n.set("cachedValue", record(getter));
 				n.set("name", wrapper.computeName);
 
-				_.difference(oldDeps, newDeps).forEach(function(id) {
-					n.noLongerDependsOn(id);
+				_.difference(oldDeps, newDeps).forEach(function(dep) {
+					graph.noLongerDependsOn(id, dep);
 				});
-				newDeps.forEach(function(id) {
-					n.dependsOn(id);
+				newDeps.forEach(function(dep) {
+					graph.dependsOn(id, dep);
 				});
 				accessed = lastAccess;
 			}
 
 			wrapper.onChange = function(listener) {
 				ensureActive();
-				graph.node(listenerKey(listener, id)).dependsOn(id).
-					set("listener", listener);
+				var key = listenerKey(listener, id);
+				graph.dependsOn(key, id);
+				graph.nodeData(key).set("listener", listener);
 			};
 			wrapper.offChange = function(listener) {
-				graph.node(listenerKey(listener, id)).noLongerDependsOn(id);
+				graph.noLongerDependsOn(listenerKey(listener, id), id);
 			};
 
 			wrapper.cid = id;
@@ -335,7 +335,7 @@
 							afterBatch(cid, true, false);
 						}
 
-						var n = graph.node(cid);
+						var n = graph.nodeData(cid);
 						n.set("name", name);
 						n.set("onRemove", function() {
 							api.offChange(update);
@@ -470,45 +470,44 @@
 
 			return finished;
 		},
-		node: function(name) { 	
-			var graph = this;
+		nodeData: function(name) {
+			return this._nodeData.get(name);
+		},
+		noLongerDependsOn: function(name, dependency) {
 			var dependsOn = this._dependsOn.get(name);
 			var dependendOnBy = this._dependedOnBy;
+			dependsOn.delete(dependency);
+			var incoming = dependendOnBy.get(dependency);
+			incoming.delete(name);
+			
+			// cleanup node data
+			if (!dependsOn.size && !dependendOnBy.get(name).size) {
+				clean(this, name);
+			} 
+			if (!incoming.size && !this._dependsOn.get(dependency).size) {
+				clean(this, dependency);
+			}
+		},
+		hasDependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
 			var dependents = dependendOnBy.get(name);
-			var data = this._nodeData.get(name);
-			return {
-				get: data.get.bind(data),
-				has: data.has.bind(data),
-				set: data.set.bind(data),
-				noLongerDependsOn: function(dependency) {
-					dependsOn.delete(dependency);
-					var incoming = dependendOnBy.get(dependency);
-					incoming.delete(name);
-					
-					// cleanup node data
-					if (!dependsOn.size && !dependendOnBy.get(name).size) {
-						clean(graph, name);
-					} 
-					if (!incoming.size && !graph._dependsOn.get(dependency).size) {
-						clean(graph, dependency);
-					}
-					return this;
-				},
-				hasDependents: function() {
-					return dependents.size > 0;
-				},
-				dependsOn: function(dependency) {
-					dependsOn.add(dependency);
-					dependendOnBy.get(dependency).add(name);
-					return this;
-				},
-				dependencies: function() {
-					return asArray(dependsOn);
-				},
-				dependents: function() {
-					return asArray(dependents);
-				},
-			};
+			return dependents.size > 0;
+		},
+		dependsOn: function(name, dependency) {
+			var dependsOn = this._dependsOn.get(name);
+			var dependendOnBy = this._dependedOnBy;
+			dependsOn.add(dependency);
+			dependendOnBy.get(dependency).add(name);
+			return this;
+		},
+		dependencies: function(name) {
+			var dependsOn = this._dependsOn.get(name);
+			return asArray(dependsOn);
+		},
+		dependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
+			var dependents = dependendOnBy.get(name);
+			return asArray(dependents);
 		},
 		toJSON: function() {
 			var result = {};

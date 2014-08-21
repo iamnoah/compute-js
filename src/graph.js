@@ -86,45 +86,44 @@
 
 			return finished;
 		},
-		node: function(name) { 	
-			var graph = this;
+		nodeData: function(name) {
+			return this._nodeData.get(name);
+		},
+		noLongerDependsOn: function(name, dependency) {
 			var dependsOn = this._dependsOn.get(name);
 			var dependendOnBy = this._dependedOnBy;
+			dependsOn.delete(dependency);
+			var incoming = dependendOnBy.get(dependency);
+			incoming.delete(name);
+			
+			// cleanup node data
+			if (!dependsOn.size && !dependendOnBy.get(name).size) {
+				clean(this, name);
+			} 
+			if (!incoming.size && !this._dependsOn.get(dependency).size) {
+				clean(this, dependency);
+			}
+		},
+		hasDependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
 			var dependents = dependendOnBy.get(name);
-			var data = this._nodeData.get(name);
-			return {
-				get: data.get.bind(data),
-				has: data.has.bind(data),
-				set: data.set.bind(data),
-				noLongerDependsOn: function(dependency) {
-					dependsOn.delete(dependency);
-					var incoming = dependendOnBy.get(dependency);
-					incoming.delete(name);
-					
-					// cleanup node data
-					if (!dependsOn.size && !dependendOnBy.get(name).size) {
-						clean(graph, name);
-					} 
-					if (!incoming.size && !graph._dependsOn.get(dependency).size) {
-						clean(graph, dependency);
-					}
-					return this;
-				},
-				hasDependents: function() {
-					return dependents.size > 0;
-				},
-				dependsOn: function(dependency) {
-					dependsOn.add(dependency);
-					dependendOnBy.get(dependency).add(name);
-					return this;
-				},
-				dependencies: function() {
-					return asArray(dependsOn);
-				},
-				dependents: function() {
-					return asArray(dependents);
-				},
-			};
+			return dependents.size > 0;
+		},
+		dependsOn: function(name, dependency) {
+			var dependsOn = this._dependsOn.get(name);
+			var dependendOnBy = this._dependedOnBy;
+			dependsOn.add(dependency);
+			dependendOnBy.get(dependency).add(name);
+			return this;
+		},
+		dependencies: function(name) {
+			var dependsOn = this._dependsOn.get(name);
+			return asArray(dependsOn);
+		},
+		dependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
+			var dependents = dependendOnBy.get(name);
+			return asArray(dependents);
 		},
 		toJSON: function() {
 			var result = {};

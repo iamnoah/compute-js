@@ -14,11 +14,11 @@ describe("graph", function() {
 	it("should express dependencies", function() {
 		var graph = new Graph();
 
-		graph.node("2").dependsOn("1");
-		graph.node("4").dependsOn("2");
-		graph.node("true").dependsOn("2");
-		graph.node("1").dependsOn("false");
-		graph.node("abc").dependsOn("def");
+		graph.dependsOn("2", "1");
+		graph.dependsOn("4", "2");
+		graph.dependsOn("true", "2");
+		graph.dependsOn("1", "false");
+		graph.dependsOn("abc", "def");
 
 		graph.toJSON().should.eql({
 			abc: {
@@ -54,7 +54,7 @@ describe("graph", function() {
 			},
 		});
 
-		graph.node("abc").noLongerDependsOn("def");
+		graph.noLongerDependsOn("abc", "def");
 
 		graph.toJSON().should.eql({
 			1: {
@@ -86,25 +86,25 @@ describe("graph", function() {
 	it("should support traversal of dependents", function() {
 		var graph = new Graph();
 
-		graph.node("2").dependsOn("1");
-		graph.node("4").dependsOn("2");
-		graph.node("true").dependsOn("2");
-		graph.node("1").dependsOn("false");
+		graph.dependsOn("2", "1");
+		graph.dependsOn("4", "2");
+		graph.dependsOn("true", "2");
+		graph.dependsOn("1", "false");
 
-		contains(graph.node("false").dependents(), ["1"]);
-		contains(graph.node("2").dependents(), ["true", "4"]);
+		contains(graph.dependents("false"), ["1"]);
+		contains(graph.dependents("2"), ["true", "4"]);
 	});
 
 	it("should clean data", function() {
 		var graph = new Graph();
-		graph.node("a").dependsOn("b");
-		graph.node("a").set("mark", true);
-		graph.node("b").set("mark", true);
+		graph.dependsOn("a", "b");
+		graph.nodeData("a").set("mark", true);
+		graph.nodeData("b").set("mark", true);
 
 		// the only thing keeping both nodes in the graph is their dependency
-		graph.node("a").noLongerDependsOn("b");
-		should(graph.node("a").get("mark")).not.eql.true;
-		should(graph.node("b").get("mark")).not.eql.true;
+		graph.noLongerDependsOn("a", "b");
+		should(graph.nodeData("a").get("mark")).not.eql.true;
+		should(graph.nodeData("b").get("mark")).not.eql.true;
 	});
 
 	it("should call onRemove when a node is removed", function() {
@@ -113,12 +113,12 @@ describe("graph", function() {
 		function rm(name) {
 			removed[name] = true;
 		}
-		graph.node("a").dependsOn("b");
-		graph.node("a").set("onRemove", rm.bind(null, "a"));
-		graph.node("b").set("onRemove", rm.bind(null, "b"));
+		graph.dependsOn("a", "b");
+		graph.nodeData("a").set("onRemove", rm.bind(null, "a"));
+		graph.nodeData("b").set("onRemove", rm.bind(null, "b"));
 		
 		removed.should.eql({});
-		graph.node("a").noLongerDependsOn("b");
+		graph.noLongerDependsOn("a", "b");
 		removed.should.eql({a: true, b: true});
 	});
 
@@ -126,12 +126,12 @@ describe("graph", function() {
 	describe("dependencyOrder(node)", function() {
 		it("should return a correct topological sort", function() {
 			var graph = new Graph();
-			graph.node("A").dependsOn("B");			
-			graph.node("B").dependsOn("C");
-			graph.node("D").dependsOn("B");
-			graph.node("D").dependsOn("C");
-			graph.node("F").dependsOn("R");
-			graph.node("C").dependsOn("R");
+			graph.dependsOn("A", "B");			
+			graph.dependsOn("B", "C");
+			graph.dependsOn("D", "B");
+			graph.dependsOn("D", "C");
+			graph.dependsOn("F", "R");
+			graph.dependsOn("C", "R");
 
 			// could be any of these variations
 			[
