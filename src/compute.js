@@ -66,7 +66,13 @@
 	};
 	Batch.prototype.send = function() {
 		_.uniq(this.toNotify).forEach(function(listener) {
-			this.graph.node(listener).get("listener")();
+			var cb = this.graph.node(listener).get("listener");
+			// XXX the listener may have been removed during the recompute
+			// process, so we can ignore it (as long as there is not a bug
+			// somewhere else.)
+			if (cb) {
+				cb();
+			}
 		}, this);
 	};
 

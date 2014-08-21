@@ -120,7 +120,13 @@
 	};
 	Batch.prototype.send = function() {
 		_.uniq(this.toNotify).forEach(function(listener) {
-			this.graph.node(listener).get("listener")();
+			var cb = this.graph.node(listener).get("listener");
+			// XXX the listener may have been removed during the recompute
+			// process, so we can ignore it (as long as there is not a bug
+			// somewhere else.)
+			if (cb) {
+				cb();
+			}
 		}, this);
 	};
 
@@ -554,10 +560,50 @@
 		return new Function("return this;");
 	})()();
 
-	var Map = (function() {
-		if (global.Map) {
-			return global.Map;
+
+	// Chrome's Set and Map do not create entries from the argument
+	function shimMap(Map) {
+		var map = new Map([
+			["uses", "array"],
+			["to", "constructor"],
+		]);
+
+		if (map.get("uses") !== "array") {
+			return function(iterable) {
+				var m = new Map();
+				asArray(iterable).forEach(function(pair) {
+					m.set(pair[0], pair[1]);
+				});
+				return m;
+			};
 		}
+
+		return Map;
+	}
+
+	function shimSet(Set) {
+		var set = new Set("uses", "array", "to", "constructor");
+
+		if (set.size !== 4 || !set.has("to")) {
+			return function(iterable) {
+				var s = new Set();
+				asArray(iterable).forEach(function(value) {
+					s.add(value);
+				});
+				return s;
+			};
+		}
+
+		return Set;
+	}
+
+	var Map = (function() {
+		// XXX the Chrome 36 implementation of Sets somehow is inserting 
+		// undefineds (despite never calling add() with undefined)
+		// May be a bug in the Map
+		// if (global.Map) {
+		// 	return shimMap(global.Map);
+		// }
 
 		function Map(iterable) {
 			Object.defineProperty(this, "__store", {
@@ -569,6 +615,7 @@
 				}, {}),
 				writeable: true,
 			});
+			this.size = Object.keys(this.__store).length;
 		}
 
 		Map.prototype.get = function(key) {
@@ -577,6 +624,9 @@
 		};
 		Map.prototype.set = function(key, value) {
 			assertString(key, "Map.set(key)");
+			if (!this.has(key)) {
+				this.size++;
+			}
 			this.__store[key] = value;
 		};
 		Map.prototype.has = function(key) {
@@ -585,9 +635,13 @@
 		};
 		Map.prototype.delete = function(key) {
 			assertString(key, "Map.delete(key)");
+			if (this.has(key)) {
+				this.size--;
+			}
 			delete this.__store[key];
 		};
 		Map.prototype.clear = function() {
+			this.size = 0;
 			this.__store = {};
 		};
 
@@ -595,23 +649,18 @@
 			return Object.keys(this.__store).forEach(function(key) {
 				iterator.call(context, this.get(key), key, this);
 			}, this);
-		};		
-
-		Object.defineProperties(Map.prototype, {
-			size: {
-				get: function() {
-					return Object.keys(this.__store).length;
-				},
-			},
-		});
+		};
 
 		return Map;
 	})();
 
 	var Set = (function() {
-		if (global.Set) {
-			return global.Set;
-		}
+		// XXX the Chrome 36 implementation of Sets somehow is inserting 
+		// undefineds (despite never calling add() with undefined)
+		// may be a bug in the Map
+		// if (global.Set) {
+		// 	return shimSet(global.Set);
+		// }
 
 		function Set(iterable) {
 			Object.defineProperty(this, "__store", {

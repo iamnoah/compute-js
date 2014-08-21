@@ -137,6 +137,44 @@ describe("compute", function() {
 			rebind.offChange(countChange);
 		});
 
+		it("should notify the same listener for different values and allow listeners to be removed", function() {
+			var root = compute.value({
+				a: 1,
+				b: 2,
+			});
+
+			var a = compute(function() {
+				return root().a;
+			});
+
+
+			var b = compute(function() {
+				return root().a;
+			});
+
+			var changes = 0;
+			function first() {
+				changes++;
+				// second is queued to be notified at this point, but if we 
+				// don't need it anymore, that's cool
+				a.offChange(second);
+			}
+
+			function second() {
+				"second should never be called".should.be.false;
+			}
+
+			a.onChange(first);
+			b.onChange(first);
+			a.onChange(second);
+
+			root.set({
+				a: 2, b: 3,
+			});
+
+			changes.should.eql(2);
+		});
+
 		it("should cache intermediate values and coalesce changes", function() {
 			var root = compute.value({
 				a: 1,
