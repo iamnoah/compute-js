@@ -8,23 +8,23 @@
 	// batch of compute updates
 	function Batch(graph) {
 		this.graph = graph;
-		this.changed = [];
 		this.changes = {};
-		this.toNotify = [];
 	}
 	Batch.prototype.addChange = function(id, oldVal, newVal) {
-		this.changed.push(id);
 		var change = this.changes[id] = this.changes[id] || {
 			oldVal: oldVal,
 		};
 		change.newVal = newVal;
-		// PERF remove changed nodes that didn't actually change value
 		// PERF can we lazy recompute somehow if in a batch?
-		this.recompute();
+		
+		// if the current value is a change, recompute
+		if (oldVal !== newVal) {
+			change.toNotify = recomputeChanged(this.graph, id);
+		}
 	};
-	Batch.prototype.recompute = function() {
-		var graph = this.graph;
 
+	function recomputeChanged(graph, changedNode) {
+		var toNotify = [];
 		// To recompute, we start with the value nodes that changed (this.changes)
 		// We then have to find all the nodes that are somehow dependent on them.
 		// We then get an ordering of all the nodes such that dependencies are
@@ -32,7 +32,6 @@
 		// At that point, all we have to do is recompute them in order. If we 
 		// get to a node that has no dependencies that have changed value, we
 		// skip it.
-		var toNotify = this.toNotify;
 		function recompute(node) {
 			var data = graph.nodeData(node);
 			if (!data.get("isCompute")) {
@@ -49,12 +48,9 @@
 			return !equal(oldVal, newVal);
 		}
 
-		var changedNodes = new Set(this.changed.filter(function(node) {
-			var change = this.changes[node];
-			return change.oldVal !== change.newVal;
-		}, this));
+		var changedNodes = new Set([changedNode]);
 		var hasChanged = changedNodes.has.bind(changedNodes);
-		graph.dependencyOrder(this.changed).filter(function(node) {
+		graph.dependencyOrder([changedNode]).filter(function(node) {
 			return !hasChanged(node);
 		}).forEach(function(node) {
 			if (graph.dependencies(node).some(hasChanged)) {
@@ -63,18 +59,24 @@
 					changedNodes.add(node);
 				}
 			}
-		}, this);
-		this.toNotify = toNotify;
-	};
+		});
+		return toNotify;
+	}
+
 	Batch.prototype.send = function() {
-		_.uniq(this.toNotify).forEach(function(listener) {
-			var cb = this.graph.nodeData(listener).get("listener");
-			// XXX the listener may have been removed during the recompute
-			// process, so we can ignore it (as long as there is not a bug
-			// somewhere else.)
-			if (cb) {
-				cb();
+		_.each(this.changes, function(change) {
+			if (change.oldVal === change.newVal) {
+				return;
 			}
+			_.uniq(change.toNotify || []).forEach(function(listener) {
+				var cb = this.graph.nodeData(listener).get("listener");
+				// XXX the listener may have been removed during the recompute
+				// process, so we can ignore it (as long as there is not a bug
+				// somewhere else.)
+				if (cb) {
+					cb();
+				}
+			}, this);
 		}, this);
 	};
 

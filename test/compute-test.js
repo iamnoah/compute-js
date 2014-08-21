@@ -35,8 +35,6 @@ describe("compute", function() {
 		});
 	});
 
-	// TODO reuse the same listener function on multiple computes and values
-
 	describe("as compute based on other values", function() {
 		var a = compute(4);
 		var b = compute(2);
@@ -432,7 +430,6 @@ describe("compute", function() {
 			c2.offChange(count);
 		});
 		it("supresses flapping", function() {
-return; // TODO fix tests
 			var changes = 0;
 			function count() {
 				changes++;
