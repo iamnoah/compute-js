@@ -127,10 +127,13 @@
 		},
 		toJSON: function() {
 			var result = {};
+			var data = function(node) {
+				return asObject(this._nodeData.get(node) || {});
+			}.bind(this);
 			this._dependsOn.forEach(function(deps, node) {
-				result[node] = _.extend(asObject(this._nodeData.get(node) || {}), {
+				result[node] = _.extend(data(node), {
 					dependencies: asArray(deps).reduce(function(deps, dep) {
-						result[dep] = result[dep] || { dependencies: {} };
+						result[dep] = result[dep] || data(dep);
 						deps[dep] = true;
 						return deps;
 					}, {}),

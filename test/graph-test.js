@@ -20,15 +20,13 @@ describe("graph", function() {
 		graph.dependsOn("1", "false");
 		graph.dependsOn("abc", "def");
 
-		graph.toJSON().should.eql({
+		graph.toJSON().should.containDeep({
 			abc: {
 				dependencies: {
 					def: true,
 				},
 			},
-			def: {
-				dependencies: {},				
-			},
+			def: {},
 			1: {
 				dependencies: {
 					false: true,
@@ -44,9 +42,7 @@ describe("graph", function() {
 					2: true,
 				},
 			},
-			false: {
-				dependencies: {},
-			},
+			false: {},
 			true: {
 				dependencies: {
 					2: true,
@@ -56,7 +52,7 @@ describe("graph", function() {
 
 		graph.noLongerDependsOn("abc", "def");
 
-		graph.toJSON().should.eql({
+		graph.toJSON().should.containDeep({
 			1: {
 				dependencies: {
 					false: true,
@@ -72,9 +68,7 @@ describe("graph", function() {
 					2: true,
 				},
 			},
-			false: {
-				dependencies: {},
-			},
+			false: {},
 			true: {
 				dependencies: {
 					2: true,

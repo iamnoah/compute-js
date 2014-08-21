@@ -13,13 +13,15 @@
 	Batch.prototype.addChange = function(id, oldVal, newVal) {
 		var change = this.changes[id] = this.changes[id] || {
 			oldVal: oldVal,
+			toNotify: [],
 		};
 		change.newVal = newVal;
 		// PERF can we lazy recompute somehow if in a batch?
 		
 		// if the current value is a change, recompute
 		if (oldVal !== newVal) {
-			change.toNotify = recomputeChanged(this.graph, id);
+			change.toNotify = change.toNotify.
+				concat(recomputeChanged(this.graph, id));
 		}
 	};
 
@@ -316,7 +318,7 @@
 				lines.push(id + '[label="' + (node.name || id) + '\\n(' + id + ')"];');
 
 				_.each(node.dependencies || [], function(t, depId) {
-					lines.push(id + " -> " + depId);
+					lines.push(id + " -> " + depId + ";");
 				});
 			});
 			lines.sort();

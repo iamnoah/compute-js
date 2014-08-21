@@ -453,8 +453,6 @@ describe("compute", function() {
 	});
 
 	describe("graph", function() {
-		return; // TODO fix tests
-
 		var ns = new compute.constructor();
 		var a = ns(1, "a");
 		var b = ns(2, "b");
@@ -473,7 +471,7 @@ describe("compute", function() {
 		g.onChange(noop);
 
 		it("should recursively get dependencies", function() {
-			ns.graph().should.eql({
+			ns.graph().should.containDeep({
 				V1: {
 					name: "a",
 				},
@@ -486,9 +484,7 @@ describe("compute", function() {
 				C4: {
 					name: "double",
 					dependencies: {
-						V3: {
-							name: "c",
-						}
+						V3: true,
 					}
 				},
 				C5: {
@@ -511,21 +507,25 @@ describe("compute", function() {
 		});
 
 		it("should visualize dependencies", function() {
-			ns.vizualize().should.eql("strict digraph dependencies {\n"+
-				'\tC4[label="double\\n(C4)"];\n' +
-				'\tC5[label="foo\\n(C5)"];\n' +
-				'\tC6[label="bar\\n(C6)"];\n' +
-				'\tV1[label="a\\n(V1)"];\n' +
-				'\tV2[label="b\\n(V2)"];\n' +
-				'\tV3[label="c\\n(V3)"];\n' +
-				"\tC4 -> V3;\n"+
-				"\tC5 -> C4;\n"+
-				"\tC5 -> V1;\n"+
-				"\tC5 -> V2;\n"+
-				"\tC6 -> V1;\n"+
-				"\tC6 -> V2;\n"+
-				"\tC6 -> V3;\n"+
-			"}");
+			ns.vizualize().split("\n").should.eql(["strict digraph dependencies {",
+				"\tC4 -> V3;",
+				'\tC4[label="double\\n(C4)"];',
+				"\tC5 -> C4;",
+				"\tC5 -> V1;",
+				"\tC5 -> V2;",
+				'\tC5[label="foo\\n(C5)"];',
+				"\tC6 -> V1;",
+				"\tC6 -> V2;",
+				"\tC6 -> V3;",
+				'\tC6[label="bar\\n(C6)"];',
+				'\tL2_noop_on_C5 -> C5;',
+				'\tL2_noop_on_C5[label="L2_noop_on_C5\\n(L2_noop_on_C5)"];',
+				'\tL2_noop_on_C6 -> C6;',
+				'\tL2_noop_on_C6[label="L2_noop_on_C6\\n(L2_noop_on_C6)"];',
+				'\tV1[label="a\\n(V1)"];',
+				'\tV2[label="b\\n(V2)"];',
+				'\tV3[label="c\\n(V3)"];',
+			"}"]);
 		});
 	});
 });
