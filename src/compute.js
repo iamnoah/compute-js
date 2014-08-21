@@ -34,15 +34,19 @@
 		// skip it.
 		var toNotify = this.toNotify;
 		function recompute(node) {
-			if (!graph.nodeData(node).get("isCompute")) {
+			var data = graph.nodeData(node);
+			if (!data.get("isCompute")) {
 				// assuming that any node that is not a compute is a listener
 				toNotify.push(node);
 				return;
 			}
-			var oldVal = graph.nodeData(node).get("cachedValue");
-			graph.nodeData(node).get("recompute")();
-			var newVal = graph.nodeData(node).get("cachedValue");
-			return oldVal !== newVal;
+			var oldVal = data.get("cachedValue");
+			data.get("recompute")();
+			var newVal = data.get("cachedValue");
+			var equal = data.get("isEqual") || function(oldVal, newVal) {
+				return oldVal === newVal;
+			};
+			return !equal(oldVal, newVal);
 		}
 
 		var changedNodes = new Set(this.changed.filter(function(node) {
@@ -192,6 +196,7 @@
 					newDeps.push(id);
 				};
 				n.set("isCompute", true);
+				n.set("isEqual", opts.isEqual);
 				n.set("recompute", recompute);
 				n.set("cachedValue", record(getter));
 				n.set("name", wrapper.computeName);

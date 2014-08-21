@@ -1,6 +1,7 @@
 /*global describe, it*/
 "use strict";
 var compute = require("../src/compute");
+var _ = require("../src/_");
 require("should");
 
 describe("compute", function() {
@@ -272,6 +273,58 @@ describe("compute", function() {
 
 			a.offChange(ignore);
 			b.offChange(count);
+		});
+
+		it("should support custom equality", function() {
+			var root = compute.value({
+				things: [{
+					id: 1,
+				},{
+					id: 2,
+				},{
+					id: 3,
+				},]
+			});
+
+			var thingIds = compute({
+				get: function() {
+					return root().things.map(function(thing) {
+						return thing.id;
+					});
+				},
+				isEqual: function(a, b) {
+					return !_.difference(a, b).length &&
+						!_.difference(b, a).length;
+				},
+			});
+
+			var changes = 0;
+			function count() {
+				changes++;
+			}
+			thingIds.onChange(count);
+
+			root.set({
+				things: [{
+					id: 2,
+				},{
+					id: 3,
+				},{
+					id: 1,
+				},]
+			});
+			changes.should.eql(0);
+
+			root.set({
+				things: [{
+					id: 3,
+				},{
+					id: 1,
+				},]
+			});
+			changes.should.eql(1);
+
+			thingIds.offChange(count);
 		});
 
 		it("should minimize recomputes", function() {
