@@ -10,13 +10,20 @@
 		this.graph = graph;
 		this.changes = {};
 	}
+	Batch.prototype.tx = function() {
+		this._tx = true;
+		return this;
+	};
 	Batch.prototype.addChange = function(id, oldVal, newVal) {
 		var change = this.changes[id] = this.changes[id] || {
+			id: id,
 			oldVal: oldVal,
 			toNotify: [],
 		};
 		change.newVal = newVal;
-		// PERF can we lazy recompute somehow if in a batch?
+		if (this._tx) {
+			return;
+		}
 		
 		// if the current value is a change, recompute
 		if (oldVal !== newVal) {
@@ -59,6 +66,13 @@
 		});
 		return toNotify;
 	}
+
+	Batch.prototype.commit = function() {
+		_.each(this.changes, function(change, id) {
+			change.toNotify = recomputeChanged(this.graph, id);
+		}, this);
+		this.send();
+	};
 
 	Batch.prototype.rollback = function() {
 		_.each(this.changes, function(change, id) {
@@ -270,6 +284,21 @@
 			batch.rollback();
 			batch = null;
 			batchDepth = 0;
+		};
+		make.createTransaction = function() {
+			var txBatch = new Batch(graph).tx();
+			var oldBatch = batch;
+			batch = txBatch;
+			return {
+				commit: function() {
+					batch = oldBatch;
+					txBatch.commit();
+				},
+				rollback: function() {
+					batch = oldBatch;
+					txBatch.rollback();
+				},
+			};
 		};
 		make.endBatch = function() {
 			if (batchDepth <= 0) {

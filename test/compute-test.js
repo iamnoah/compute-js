@@ -486,6 +486,58 @@ describe("compute", function() {
 		});
 	});
 
+	describe("transaction", function() {
+		it("changes no cached values until commited", function() {
+			var changes = 0;
+			function count() {
+				changes++;
+			}
+
+			var double = compute({
+				get: function double() {
+					return c.get() * 2;
+				},
+			});
+			
+			c.set(123);
+			double.onChange(count);
+
+			var tx = compute.createTransaction();
+
+			c.set(456);
+			double.get().should.eql(246);
+			changes.should.eql(0);
+
+			tx.commit();
+			changes.should.eql(1);
+		});
+		it("can roll back", function() {
+			var changes = 0;
+			function count() {
+				changes++;
+			}
+
+			var double = compute({
+				get: function double() {
+					return c.get() * 2;
+				},
+			});
+			
+			c.set(123);
+			double.onChange(count);
+
+			var tx = compute.createTransaction();
+
+			c.set(456);
+			double.get().should.eql(246);
+			changes.should.eql(0);
+
+			tx.rollback();
+			double.get().should.eql(246);
+			changes.should.eql(0);
+		});
+	});
+
 	describe("graph", function() {
 		var ns = new compute.constructor();
 		var a = ns(1, "a");
