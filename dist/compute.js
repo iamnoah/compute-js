@@ -62,23 +62,32 @@
 	// batch of compute updates
 	function Batch(graph) {
 		this.graph = graph;
-		this.changed = [];
 		this.changes = {};
-		this.toNotify = [];
 	}
+	Batch.prototype.tx = function() {
+		this._tx = true;
+		return this;
+	};
 	Batch.prototype.addChange = function(id, oldVal, newVal) {
-		this.changed.push(id);
 		var change = this.changes[id] = this.changes[id] || {
+			id: id,
 			oldVal: oldVal,
+			toNotify: [],
 		};
 		change.newVal = newVal;
-		// PERF remove changed nodes that didn't actually change value
-		// PERF can we lazy recompute somehow if in a batch?
-		this.recompute();
+		if (this._tx) {
+			return;
+		}
+		
+		// if the current value is a change, recompute
+		if (oldVal !== newVal) {
+			change.toNotify = change.toNotify.
+				concat(recomputeChanged(this.graph, id));
+		}
 	};
-	Batch.prototype.recompute = function() {
-		var graph = this.graph;
 
+	function recomputeChanged(graph, changedNode) {
+		var toNotify = [];
 		// To recompute, we start with the value nodes that changed (this.changes)
 		// We then have to find all the nodes that are somehow dependent on them.
 		// We then get an ordering of all the nodes such that dependencies are
@@ -86,29 +95,20 @@
 		// At that point, all we have to do is recompute them in order. If we 
 		// get to a node that has no dependencies that have changed value, we
 		// skip it.
-		var toNotify = this.toNotify;
 		function recompute(node) {
 			var data = graph.nodeData(node);
-			if (!data.get("isCompute")) {
+			var recomp = data.get("recompute");
+			if (!recomp) {
 				// assuming that any node that is not a compute is a listener
 				toNotify.push(node);
 				return;
 			}
-			var oldVal = data.get("cachedValue");
-			data.get("recompute")();
-			var newVal = data.get("cachedValue");
-			var equal = data.get("isEqual") || function(oldVal, newVal) {
-				return oldVal === newVal;
-			};
-			return !equal(oldVal, newVal);
+			return recomp();
 		}
 
-		var changedNodes = new Set(this.changed.filter(function(node) {
-			var change = this.changes[node];
-			return change.oldVal !== change.newVal;
-		}, this));
+		var changedNodes = new Set([changedNode]);
 		var hasChanged = changedNodes.has.bind(changedNodes);
-		graph.dependencyOrder(this.changed).filter(function(node) {
+		graph.dependencyOrder([changedNode]).filter(function(node) {
 			return !hasChanged(node);
 		}).forEach(function(node) {
 			if (graph.dependencies(node).some(hasChanged)) {
@@ -117,18 +117,37 @@
 					changedNodes.add(node);
 				}
 			}
+		});
+		return toNotify;
+	}
+
+	Batch.prototype.commit = function() {
+		_.each(this.changes, function(change, id) {
+			change.toNotify = recomputeChanged(this.graph, id);
 		}, this);
-		this.toNotify = toNotify;
+		this.send();
 	};
+
+	Batch.prototype.rollback = function() {
+		_.each(this.changes, function(change, id) {
+			this.graph.nodeData(id).get("setValue")(change.oldVal);
+		}, this);
+	};
+
 	Batch.prototype.send = function() {
-		_.uniq(this.toNotify).forEach(function(listener) {
-			var cb = this.graph.nodeData(listener).get("listener");
-			// XXX the listener may have been removed during the recompute
-			// process, so we can ignore it (as long as there is not a bug
-			// somewhere else.)
-			if (cb) {
-				cb();
+		_.each(this.changes, function(change) {
+			if (change.oldVal === change.newVal) {
+				return;
 			}
+			_.uniq(change.toNotify || []).forEach(function(listener) {
+				var cb = this.graph.nodeData(listener).get("listener");
+				// XXX the listener may have been removed during the recompute
+				// process, so we can ignore it (as long as there is not a bug
+				// somewhere else.)
+				if (cb) {
+					cb();
+				}
+			}, this);
 		}, this);
 	};
 
@@ -183,9 +202,13 @@
 			holder.get = function() {
 				if (accessed) {
 					accessed(id);
-					// TODO if dev
+					// TODO only set name if dev
 					graph.nodeData(id).set("name", holder.computeName);
+					graph.nodeData(id).set("setValue", holder.set);
 				}
+				return value;
+			};
+			holder.peek = function() {
 				return value;
 			};
 			holder.set = function(newVal) {
@@ -230,6 +253,10 @@
 					ensureActive();
 					accessed(id);
 				}
+				return wrapper.peek();
+			};
+
+			wrapper.peek = function() {
 				var n = graph.nodeData(id);
 				return n.has("cachedValue") ? n.get("cachedValue") : getter();
 			};
@@ -237,6 +264,10 @@
 			var setter = opts.set;
 			wrapper.set = setter && function(newValue) {
 				return setter.call(opts.ctx, newValue);
+			};
+
+			var isEqual = opts.isEqual || function(oldVal, newVal) {
+				return oldVal === newVal;
 			};
 
 			// recompute ensures that the graph is updated with our most 
@@ -249,10 +280,10 @@
 				accessed = function(id) {
 					newDeps.push(id);
 				};
-				n.set("isCompute", true);
-				n.set("isEqual", opts.isEqual);
+				var oldVal = n.get("cachedValue");
+				var newVal = record(getter);
 				n.set("recompute", recompute);
-				n.set("cachedValue", record(getter));
+				n.set("cachedValue", newVal);
 				n.set("name", wrapper.computeName);
 
 				_.difference(oldDeps, newDeps).forEach(function(dep) {
@@ -262,6 +293,8 @@
 					graph.dependsOn(id, dep);
 				});
 				accessed = lastAccess;
+
+				return !isEqual(oldVal, newVal);
 			}
 
 			wrapper.onChange = function(listener) {
@@ -304,6 +337,29 @@
 				batch = new Batch(graph);
 			}
 			batchDepth++;
+		};
+		make.rollback = function() {
+			if (!batch) {
+				throw new Error("No batch to roll back!");
+			}
+			batch.rollback();
+			batch = null;
+			batchDepth = 0;
+		};
+		make.createTransaction = function() {
+			var txBatch = new Batch(graph).tx();
+			var oldBatch = batch;
+			batch = txBatch;
+			return {
+				commit: function() {
+					batch = oldBatch;
+					txBatch.commit();
+				},
+				rollback: function() {
+					batch = oldBatch;
+					txBatch.rollback();
+				},
+			};
 		};
 		make.endBatch = function() {
 			if (batchDepth <= 0) {
@@ -368,7 +424,7 @@
 				lines.push(id + '[label="' + (node.name || id) + '\\n(' + id + ')"];');
 
 				_.each(node.dependencies || [], function(t, depId) {
-					lines.push(id + " -> " + depId);
+					lines.push(id + " -> " + depId + ";");
 				});
 			});
 			lines.sort();
@@ -516,10 +572,13 @@
 		},
 		toJSON: function() {
 			var result = {};
+			var data = function(node) {
+				return asObject(this._nodeData.get(node) || {});
+			}.bind(this);
 			this._dependsOn.forEach(function(deps, node) {
-				result[node] = _.extend(asObject(this._nodeData.get(node) || {}), {
+				result[node] = _.extend(data(node), {
 					dependencies: asArray(deps).reduce(function(deps, dep) {
-						result[dep] = result[dep] || { dependencies: {} };
+						result[dep] = result[dep] || data(dep);
 						deps[dep] = true;
 						return deps;
 					}, {}),
