@@ -216,6 +216,10 @@
 				return oldVal === newVal;
 			};
 
+			function rmDep(dep) {
+				graph.noLongerDependsOn(id, dep);
+			}
+
 			// recompute ensures that the graph is updated with our most 
 			// current value and dependencies
 			function recompute() {
@@ -230,11 +234,12 @@
 				var newVal = record(getter);
 				n.set("recompute", recompute);
 				n.set("cachedValue", newVal);
+				n.set("onNoDependents", function() {
+					graph.dependencies(id).forEach(rmDep);
+				});
 				n.set("name", wrapper.computeName);
 
-				_.difference(oldDeps, newDeps).forEach(function(dep) {
-					graph.noLongerDependsOn(id, dep);
-				});
+				_.difference(oldDeps, newDeps).forEach(rmDep);
 				newDeps.forEach(function(dep) {
 					graph.dependsOn(id, dep);
 				});

@@ -3322,6 +3322,10 @@
 				return oldVal === newVal;
 			};
 
+			function rmDep(dep) {
+				graph.noLongerDependsOn(id, dep);
+			}
+
 			// recompute ensures that the graph is updated with our most 
 			// current value and dependencies
 			function recompute() {
@@ -3336,11 +3340,12 @@
 				var newVal = record(getter);
 				n.set("recompute", recompute);
 				n.set("cachedValue", newVal);
+				n.set("onNoDependents", function() {
+					graph.dependencies(id).forEach(rmDep);
+				});
 				n.set("name", wrapper.computeName);
 
-				_.difference(oldDeps, newDeps).forEach(function(dep) {
-					graph.noLongerDependsOn(id, dep);
-				});
+				_.difference(oldDeps, newDeps).forEach(rmDep);
 				newDeps.forEach(function(dep) {
 					graph.dependsOn(id, dep);
 				});
@@ -3561,6 +3566,15 @@
 		graph._nodeData.delete(name);
 	}
 
+	// an anonymous node is one that doesn't have any incoming edges
+	// (no other node knows about/depends on it)
+	function cleanAnonymous(graph, name) {
+		var tearDown = graph._nodeData.get(name).get("onNoDependents");
+		if (tearDown) {
+			tearDown();
+		}
+	}
+
 	_.extend(Graph.prototype, {
 		// TODO check for cycles in dev mode
 		dependencyOrder: function(nodes) {
@@ -3597,8 +3611,11 @@
 			if (!dependsOn.size && !dependendOnBy.get(name).size) {
 				clean(this, name);
 			} 
-			if (!incoming.size && !this._dependsOn.get(dependency).size) {
-				clean(this, dependency);
+			if (!incoming.size) {
+				cleanAnonymous(this, dependency);
+				if (!this._dependsOn.get(dependency).size) {
+					clean(this, dependency);
+				}
 			}
 		},
 		hasDependents: function(name) {

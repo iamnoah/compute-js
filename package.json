@@ -1,6 +1,6 @@
 {
   "name": "compute-js",
-  "version": "0.1.0-beta",
+  "version": "0.1.0-beta.1",
   "description": "Standalone Computed Functions",
   "main": "src/compute.js",
   "engines": {

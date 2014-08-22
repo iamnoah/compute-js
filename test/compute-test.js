@@ -406,6 +406,23 @@ describe("compute", function() {
 			// e.g., a uses b before b recomputes and gets the old value
 			a().should.eql(13);
 		});
+
+		it("should release its dependencies when it no longer has dependents", function() {
+			var compute = new require("../src/compute").constructor();
+			var a = compute("a");
+			var b = compute("b");
+
+			var c = compute(function() {
+				return a.get() + b.get();
+			});
+
+			c.onChange(noop);
+			// listener, a, b & c
+			Object.keys(compute.graph()).length.should.eql(4);
+			c.offChange(noop);
+			// all should be removed from the graph
+			Object.keys(compute.graph()).length.should.eql(0);
+		});
 	});
 
 	function noop() {}

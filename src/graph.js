@@ -64,6 +64,15 @@
 		graph._nodeData.delete(name);
 	}
 
+	// an anonymous node is one that doesn't have any incoming edges
+	// (no other node knows about/depends on it)
+	function cleanAnonymous(graph, name) {
+		var tearDown = graph._nodeData.get(name).get("onNoDependents");
+		if (tearDown) {
+			tearDown();
+		}
+	}
+
 	_.extend(Graph.prototype, {
 		// TODO check for cycles in dev mode
 		dependencyOrder: function(nodes) {
@@ -100,8 +109,11 @@
 			if (!dependsOn.size && !dependendOnBy.get(name).size) {
 				clean(this, name);
 			} 
-			if (!incoming.size && !this._dependsOn.get(dependency).size) {
-				clean(this, dependency);
+			if (!incoming.size) {
+				cleanAnonymous(this, dependency);
+				if (!this._dependsOn.get(dependency).size) {
+					clean(this, dependency);
+				}
 			}
 		},
 		hasDependents: function(name) {
