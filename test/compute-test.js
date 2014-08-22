@@ -62,6 +62,25 @@ describe("compute", function() {
 			ab.offChange(countChange);
 		});
 
+		it("should not bind to peeked computed", function() {
+			var c = compute(6);
+			var buh = compute(function() {
+				a.peek().should.eql(4);
+				b.peek().should.eql(2);
+				return c.get();
+			});
+
+			var changes = 0;
+			function count() {
+				changes++;
+			}
+			buh.onChange(count);
+			c.get().should.eql(6);
+			a.set(10);
+			changes.should.eql(0);
+			a.set(4);
+		});
+
 		it("should take context as the 2nd parameter", function() {
 			var foo = compute(function() {
 				return this.bar(a(), b());

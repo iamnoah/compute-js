@@ -154,6 +154,9 @@
 				}
 				return value;
 			};
+			holder.peek = function() {
+				return value;
+			};
 			holder.set = function(newVal) {
 				var oldVal = value;
 				value = newVal;
@@ -196,6 +199,10 @@
 					ensureActive();
 					accessed(id);
 				}
+				return wrapper.peek();
+			};
+
+			wrapper.peek = function() {
 				var n = graph.nodeData(id);
 				return n.has("cachedValue") ? n.get("cachedValue") : getter();
 			};
