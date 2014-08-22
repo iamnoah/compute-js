@@ -36,18 +36,13 @@
 		// skip it.
 		function recompute(node) {
 			var data = graph.nodeData(node);
-			if (!data.get("isCompute")) {
+			var recomp = data.get("recompute");
+			if (!recomp) {
 				// assuming that any node that is not a compute is a listener
 				toNotify.push(node);
 				return;
 			}
-			var oldVal = data.get("cachedValue");
-			data.get("recompute")();
-			var newVal = data.get("cachedValue");
-			var equal = data.get("isEqual") || function(oldVal, newVal) {
-				return oldVal === newVal;
-			};
-			return !equal(oldVal, newVal);
+			return recomp();
 		}
 
 		var changedNodes = new Set([changedNode]);
@@ -64,6 +59,12 @@
 		});
 		return toNotify;
 	}
+
+	Batch.prototype.rollback = function() {
+		_.each(this.changes, function(change, id) {
+			this.graph.nodeData(id).get("setValue")(change.oldVal);
+		}, this);
+	};
 
 	Batch.prototype.send = function() {
 		_.each(this.changes, function(change) {
@@ -133,8 +134,9 @@
 			holder.get = function() {
 				if (accessed) {
 					accessed(id);
-					// TODO if dev
+					// TODO only set name if dev
 					graph.nodeData(id).set("name", holder.computeName);
+					graph.nodeData(id).set("setValue", holder.set);
 				}
 				return value;
 			};
@@ -189,6 +191,10 @@
 				return setter.call(opts.ctx, newValue);
 			};
 
+			var isEqual = opts.isEqual || function(oldVal, newVal) {
+				return oldVal === newVal;
+			};
+
 			// recompute ensures that the graph is updated with our most 
 			// current value and dependencies
 			function recompute() {
@@ -199,10 +205,10 @@
 				accessed = function(id) {
 					newDeps.push(id);
 				};
-				n.set("isCompute", true);
-				n.set("isEqual", opts.isEqual);
+				var oldVal = n.get("cachedValue");
+				var newVal = record(getter);
 				n.set("recompute", recompute);
-				n.set("cachedValue", record(getter));
+				n.set("cachedValue", newVal);
 				n.set("name", wrapper.computeName);
 
 				_.difference(oldDeps, newDeps).forEach(function(dep) {
@@ -212,6 +218,8 @@
 					graph.dependsOn(id, dep);
 				});
 				accessed = lastAccess;
+
+				return !isEqual(oldVal, newVal);
 			}
 
 			wrapper.onChange = function(listener) {
@@ -254,6 +262,14 @@
 				batch = new Batch(graph);
 			}
 			batchDepth++;
+		};
+		make.rollback = function() {
+			if (!batch) {
+				throw new Error("No batch to roll back!");
+			}
+			batch.rollback();
+			batch = null;
+			batchDepth = 0;
 		};
 		make.endBatch = function() {
 			if (batchDepth <= 0) {

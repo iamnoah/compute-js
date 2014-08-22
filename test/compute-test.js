@@ -291,6 +291,8 @@ describe("compute", function() {
 					});
 				},
 				isEqual: function(a, b) {
+					a = a || [];
+					b = b || [];
 					return !_.difference(a, b).length &&
 						!_.difference(b, a).length;
 				},
@@ -392,7 +394,7 @@ describe("compute", function() {
 		var c2 = compute(function() {
 			return c() * 2;
 		});
-		it("does not cache values", function() {
+		it("always returns current values", function() {
 			c2.onChange(noop);
 			compute.startBatch();
 			c.set(123);
@@ -449,6 +451,38 @@ describe("compute", function() {
 			changes.should.eql(0);
 
 			c.offChange(count);
+		});
+
+		it("can roll back", function() {
+			var changes = 0;
+			function count() {
+				changes++;
+			}
+
+			var double = compute({
+				get: function double() {
+					return c.get() * 2;
+				},
+			});
+			
+			c.set(123);
+			double.onChange(count);
+
+			compute.startBatch();
+			
+			c.set(456);
+			double.get().should.eql(456 * 2);
+			c.set(789);
+			double.get().should.eql(789 * 2);
+
+			compute.rollback();
+
+			changes.should.eql(0);
+
+			double.get().should.eql(246);
+			c.get().should.eql(123);
+
+			c.offChange(count);			
 		});
 	});
 
