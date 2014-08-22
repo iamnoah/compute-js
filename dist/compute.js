@@ -425,11 +425,15 @@
 		make.vizualize = function(g) {
 			g = g || make.graph();
 			var lines = [];
+			function quote(s) { return '"' + s.replace(/"/g, '&quot;') + '"'; }
 			_.each(g, function(node, id) {
-				lines.push(id + '[label="' + (node.name || id) + '\\n(' + id + ')"];');
+				if (node.name) {
+					var label = node.name + "\\n(" + id + ")";
+					lines.push(quote(id) + '[label=' + quote(label) + '];');
+				}
 
 				_.each(node.dependencies || [], function(t, depId) {
-					lines.push(id + " -> " + depId + ";");
+					lines.push(quote(id) + " -> " + quote(depId) + ";");
 				});
 			});
 			lines.sort();
