@@ -70,7 +70,7 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-connect');
 
   // Default task.
-  grunt.registerTask('tests', ['connect:tests', 'watch:tests']);
+  grunt.registerTask('tests', ["browserify:tests", 'connect:tests', 'watch:tests']);
 
   grunt.registerTask('default', ['simplemocha:all',
       "browserify:compute",
