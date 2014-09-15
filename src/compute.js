@@ -348,11 +348,15 @@
 						}
 
 						var n = graph.nodeData(cid);
-						n.set("name", name);
-						n.set("onRemove", function() {
-							api.offChange(update);
-						});
-						api.onChange(update);
+						// if we already have a node for the connected compute,
+						// there is no need to observe it a second time
+						if (!n.has("onRemove")) {						
+							n.set("name", name);
+							n.set("onRemove", function() {
+								api.offChange(update);
+							});
+							api.onChange(update);
+						}
 
 						accessed(cid);
 					});

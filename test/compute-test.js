@@ -423,6 +423,57 @@ describe("compute", function() {
 			// all should be removed from the graph
 			Object.keys(compute.graph()).length.should.eql(0);
 		});
+
+	});
+
+	describe("when connected to other computes", function() {
+		it("should remove all listeners that were added", function() {
+			var compute = new require("../src/compute").constructor();
+			var count = 0;
+			// for this test, all computes access the "counter"
+			compute.connect({
+				record: function(fn, access) {
+					access({
+						onChange: function() {
+							count++;
+						},
+						offChange: function() {
+							count--;
+						},
+					}, "counter");
+					return fn();
+				},
+			});
+
+			// pretend that it accesses some other compute since we mocked it 
+			// that way
+			var d = compute.value(true);
+			var c = compute(function() {
+				return d.get();
+			});
+			var e = compute(function() {});
+
+			var changes = 0;
+			function countChange() {
+				changes++;
+			}
+
+			c.onChange(countChange);
+			e.onChange(countChange);
+			c.get().should.eql(true);
+			d.set(false);
+			changes.should.eql(1);
+			c.get().should.eql(false);
+
+			// recompute should remove one and add one
+			// we should never add more than 1 listener
+			count.should.eql(1);
+
+			c.offChange(countChange);
+			e.offChange(countChange);
+
+			count.should.eql(0);
+		});
 	});
 
 	function noop() {}
