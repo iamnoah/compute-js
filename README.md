@@ -216,3 +216,5 @@ var bazCompute = compute(baz);
 My first exposure to computes was in [CanJS](http://canjs.us). As far as I know [KnockoutJS](http://knockoutjs.com/) first came up with the idea.
 
 [Steve Shipman](https://github.com/sshipman) coined the term "compute nature" and generally gives me great, thoughtful feedback on my code. Thanks Doc.
+
+We ended up using this at Spredfast, and the resulting iteration and hardening made a much better library. Thanks to my employer for their contribution to open source.
