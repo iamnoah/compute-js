@@ -56,293 +56,140 @@
 	"use strict";
 
 	var _ = _dereq_("./_");
-
-	var uid = 0;
-	// Standard Observer pattern.
-	function Listeners() {
-		this.NS = "__mu_compute_" + (++uid);
-		this._keyToId = {};
-		this._listeners = {};
-		this._ordered = [];
-	}
-
-	/**
-	 * @param {function()} listener
-	 * @param {?String} key optional key. Must be unique.
-	 * Can be used to remove the listener without a reference to the 
-	 * original function.
-	 */
-	Listeners.prototype.add = function(listener, key) {
-		if (listener[this.NS]) {
-			throw new Error("Function is already bound to this compute! " + (key || ""));
-		}
-		var id = "L" + (++uid);
-		if (key) {
-			if (this._keyToId[key]) {
-				throw new Error("Listener key already in use: " + key);
-			}
-			this._keyToId[key] = id;
-		}
-		listener[this.NS] = id;
-		this._listeners[id] = listener;
-		this._ordered.push(listener);
-	};
-	Listeners.prototype.remove = function(listener) {
-		var id;
-		if (typeof listener === "string") {
-			id = this._keyToId[listener];
-			delete this._keyToId[listener];
-		} else {
-			id = listener[this.NS];
-		}
-
-		if (!id) {
-			throw new Error("Tried to remove a non-listener: " + listener);
-		}
-
-		var fn = this._listeners[id];
-		delete this._listeners[id];
-		delete fn[this.NS];
-		var index = this._ordered.indexOf(fn);
-		if (~index) {
-			this._ordered.splice(index, 1);
-		}
-	};
-	Listeners.prototype.notify = function() {
-		var args = arguments;
-		this._ordered.forEach(function(fn) {
-			fn.apply(null, args);
-		});
-	};
-	Object.defineProperties(Listeners.prototype, {
-		length: {
-			get: function() {
-				return this._ordered.length;
-			}
-		}
-	});
-
-	// Helper for monitoring the values getValue requires to compute.
-	function Monitor(getValue, record, onWrite, opts) {
-		this.id = "M" + (++uid);
-		this.get = function() {
-			this._value = getValue();
-		}.bind(this);
-		this.record = record;
-		this.onWrite = onWrite;
-		this.opts = opts;
-
-		this._dirtyListeners = new Listeners();
-		this.onChange = this.onChange.bind(this);
-		this.setDirty = this.setDirty.bind(this);
-		this.onDirty = this.onDirty.bind(this);
-		this.offDirty = this.offDirty.bind(this);
-	}
-	Monitor.prototype.onDirty = function(fn) {
-		this._dirtyListeners.add(fn);
-	};
-	Monitor.prototype.offDirty = function(fn) {
-		this._dirtyListeners.remove(fn);
-	};
-	Monitor.prototype.setDirty = function() {
-		if (!this.dirty) {
-			this.dirty = true;
-			this._dirtyListeners.notify();
-		}
-	};
-	Monitor.prototype.recompute = function() {
-		// record what was accessed
-		var oldWatches = this._toWatch || {
-			order: [],
-			computes: {}
-		};
-		this.dirty = false;
-		this._toWatch = this.record(this.get);
-
-		// update what we are watching
-		var oldIds = _.uniq(oldWatches.order);
-		var newIds = _.uniq(this._toWatch.order);
-		var newWatches = _.difference(newIds, oldIds);
-		var rmWatches = _.difference(oldIds, newIds);
-
-		_.each(rmWatches, function(id) {
-			var c = oldWatches.computes[id];
-			c.offChange(this.onChange);
-			if (c.offDirty) {
-				c.offDirty(this.setDirty);
-			}
-		}, this);
-		_.each(newWatches, function(id) {
-			var c = this._toWatch.computes[id];
-			if (c.onDirty) {
-				c.onDirty(this.setDirty);
-			}
-			c.onChange(this.onChange);
-		}, this);
-	};
-	Monitor.prototype.graph = function() {
-		var bound = this.bound;
-		if (!this._toWatch) {
-			this.recompute();
-		}
-		var watches = this._toWatch;
-		var graph = watches.order.reduce(function(deps, id) {
-			var graph = {};
-
-			var c = watches.computes[id];
-
-			if (c.graph) {
-				graph[id] = {
-					name: c.computeName,
-					dependencies: c.graph(),
-				};
-			} else {				
-				graph[id] = {
-					name: c.computeName,
-				};
-			}
-
-			return _.extend(graph, deps);
-		}, {});
-		if (!bound) {
-			this.unbind();
-		}
-		return graph;
-	};
-	Monitor.prototype.onChange = function() {
-		// if dirty, recompute and notify listeners if the result changed
-		if (!this.dirty) {
-			return;
-		}
-		var oldVal = this._value;
-		this.recompute();
-		this.onWrite(oldVal, this._value);
-	};
-	Monitor.prototype.unbind = function() {
-		_.each(_.uniq(this._toWatch.order), function(id) {
-			var c = this._toWatch.computes[id];
-			c.offChange(this.onChange);
-			if (c.offDirty) {
-				c.offDirty(this.setDirty);
-			}
-		}, this);
-		this._toWatch = false;
-	};
-	Object.defineProperties(Monitor.prototype, {
-		bound: {
-			get: function() {
-				return !!this._toWatch;
-			}
-		},
-		value: {
-			get: function() {
-				this.onChange();
-				return this._value;
-			},
-		},
-	});
+	var Graph = _dereq_("./graph");
+	var Set = _dereq_("./string-collections").Set;
 
 	// batch of compute updates
-	function Batch() {
-		this.order = [];
-		this.notifications = {};
+	function Batch(graph) {
+		this.graph = graph;
+		this.changes = {};
 	}
-	Batch.prototype.addChange = function(listeners, oldVal, newVal) {
-		var id = listeners.NS;
-		this.order.push(id);
-
-		// the first time we see the listeners, save the old value
-		var state = this.notifications[id] = this.notifications[id] || {
-			listeners: listeners,
-			oldVal: oldVal
-		};
-		// always update the new value
-		state.newVal = newVal;
+	Batch.prototype.tx = function() {
+		this._tx = true;
+		return this;
 	};
-	Batch.prototype.send = function() {
-		_.uniq(this.order).forEach(function(id) {
-			var state = this.notifications[id];
-			if (state.oldVal !== state.newVal) {
-				state.listeners.notify(state.oldVal, state.newVal);
+	Batch.prototype.addChange = function(id, oldVal, newVal) {
+		var change = this.changes[id] = this.changes[id] || {
+			id: id,
+			oldVal: oldVal,
+			toNotify: [],
+		};
+		change.newVal = newVal;
+		if (this._tx) {
+			return;
+		}
+		
+		// if the current value is a change, recompute
+		if (oldVal !== newVal) {
+			change.toNotify = change.toNotify.
+				concat(recomputeChanged(this.graph, id));
+		}
+	};
+
+	function recomputeChanged(graph, changedNode) {
+		var toNotify = [];
+		// To recompute, we start with the value nodes that changed (this.changes)
+		// We then have to find all the nodes that are somehow dependent on them.
+		// We then get an ordering of all the nodes such that dependencies are
+		// recomputed before dependents.
+		// At that point, all we have to do is recompute them in order. If we 
+		// get to a node that has no dependencies that have changed value, we
+		// skip it.
+		function recompute(node) {
+			var data = graph.nodeData(node);
+			var recomp = data.get("recompute");
+			if (!recomp) {
+				// assuming that any node that is not a compute is a listener
+				toNotify.push(node);
+				return;
 			}
+			return recomp();
+		}
+
+		var changedNodes = new Set([changedNode]);
+		var hasChanged = changedNodes.has.bind(changedNodes);
+		graph.dependencyOrder([changedNode]).filter(function(node) {
+			return !hasChanged(node);
+		}).forEach(function(node) {
+			if (graph.dependencies(node).some(hasChanged)) {
+				var changed = recompute(node);
+				if (changed) {
+					changedNodes.add(node);
+				}
+			}
+		});
+		return toNotify;
+	}
+
+	Batch.prototype.commit = function() {
+		_.each(this.changes, function(change, id) {
+			change.toNotify = recomputeChanged(this.graph, id);
+		}, this);
+		this.send();
+	};
+
+	Batch.prototype.rollback = function() {
+		_.each(this.changes, function(change, id) {
+			this.graph.nodeData(id).get("setValue")(change.oldVal);
 		}, this);
 	};
 
-	function namespacedGraph(makeGraph, name) {
-		if (!makeGraph) {
-			return false;
-		}
-		function namespace(obj) {
-			if (obj === true) {
-				return obj;
+	Batch.prototype.send = function() {
+		_.each(this.changes, function(change) {
+			if (change.oldVal === change.newVal) {
+				return;
 			}
-			var result = {};
-			_.each(obj, function(value, key) {
-				result[name + ":" + key] = namespace(value);
-			});
-			return result;
-		}
-		return function() {
-			return namespace(makeGraph());
-		};
-	}
+			_.uniq(change.toNotify || []).forEach(function(listener) {
+				var cb = this.graph.nodeData(listener).get("listener");
+				// XXX the listener may have been removed during the recompute
+				// process, so we can ignore it (as long as there is not a bug
+				// somewhere else.)
+				if (cb) {
+					cb();
+				}
+			}, this);
+		}, this);
+	};
 
 	function Computes() {
-		var accessed = function() {};
-		var batch, batchDepth;
+		var accessed = false;
+		var graph = new Graph();
+
+		var idOf = (function() {
+			// XXX add a non-enumerable, random key to the object so we can 
+			// identify it again efficiently.
+			var oid = 1;
+			var EXPANDO = "compute-js-" + Math.random().toString(36).slice(2);
+
+			return function(thing) {
+				if (!thing[EXPANDO]) {
+					Object.defineProperty(thing, EXPANDO, {
+						configurable: false,
+						enumerable: false,
+						value: "L" + (++oid) + "_" + thing.name,
+					});
+				}
+				return thing[EXPANDO];
+			};
+		})();
+
+		var batch;
+		var batchDepth = 0;
 		var nsId = 0;
-		function afterBatch(listeners, oldVal, newVal) {
+		function afterBatch(id, oldVal, newVal) {
 			if (batch) {
-				batch.addChange(listeners, oldVal, newVal);
+				batch.addChange(id, oldVal, newVal);
 			} else {
-				var b = new Batch();
-				b.addChange(listeners, oldVal, newVal);
+				var b = new Batch(graph);
+				b.addChange(id, oldVal, newVal);
 				b.send();
 			}
 		}
-		function record(fn) {
-			// record what computes were accessed while the function ran
-			// so we know what to bind to
-			var records = {
-				// need to record the access order so we can consistently bind/unbind
-				order: [],
-				computes: {}
-			};
-			var oldAccessed = accessed;
-			accessed = function(compute, id) {
-				// if this is one of our computes, monitor it *now* so we are
-				// observing just it and not its dependencies
-				if (compute.track) {
-					compute.track();
-				}
-				records.order.push(id);
-				records.computes[id] = compute;
-			};
-			connected.reduce(function(fn, connect, i) {
-				var prefix = connect.name || ("connect-" + i);
-				return function() {
-					connect.record(fn, function(compute, id) {
-						accessed({
-							onChange: compute.onChange,
-							offChange: compute.offChange,
-							// XXX dirty is just an internal concept, so just 
-							// bind a 2nd listener to mark dirty when an extenal
-							// compute changes
-							onDirty: compute.onChange,
-							offDirty: compute.offChange,
-							computeName: prefix + ":" + (compute.computeName || id),
-							graph: namespacedGraph(compute.graph, prefix),
-						}, "connected:" + i + ":" + id);
-					});
-				};
-			}, fn)();
-			accessed = oldAccessed;
-			return records;
+		function listenerKey(fn, id) {
+			return idOf(fn) + "_on_" + id;
 		}
 		// Simple observable wrapper around a value.
 		function valueCompute(opts) {
-			var listeners = new Listeners();
-			var dirty = new Listeners();
 			var id = "V" + (++nsId);
 			var value = opts.value;
 			function holder(v) {
@@ -353,28 +200,30 @@
 			}
 			holder.cid = id;
 			holder.get = function() {
-				accessed({
-					onChange: holder.onChange,
-					offChange: holder.offChange,
-					computeName: holder.computeName,
-					onDirty: dirty.add.bind(dirty),
-					offDirty: dirty.remove.bind(dirty),	
-				}, id);
+				if (accessed) {
+					accessed(id);
+					// TODO only set name if dev
+					graph.nodeData(id).set("name", holder.computeName);
+					graph.nodeData(id).set("setValue", holder.set);
+				}
+				return value;
+			};
+			holder.peek = function() {
 				return value;
 			};
 			holder.set = function(newVal) {
 				var oldVal = value;
 				value = newVal;
-				dirty.notify();
-				afterBatch(listeners, oldVal, newVal);
+				afterBatch(id, oldVal, newVal);
 			};
-			holder.onChange = function(listener, key) {
-				listeners.add(listener, key);
+			holder.onChange = function(listener) {
+				var key = listenerKey(listener, id);
+				graph.dependsOn(key, id);
+				graph.nodeData(key).set("listener", listener);
 			};
 			holder.offChange = function(listener) {
-				listeners.remove(listener);
+				graph.noLongerDependsOn(listenerKey(listener, id), id);				
 			};
-			holder.__listeners = listeners;
 
 			holder.computeName = "" + (opts.name || value || id);
 
@@ -382,7 +231,6 @@
 		}
 		// Wraps a computation of value computes.
 		function compute(opts) {			
-			var listeners = new Listeners();
 			var id = "C" + (++nsId);
 			function wrapper(newVal) {
 				if (arguments.length) {
@@ -390,20 +238,27 @@
 				}
 				return wrapper.get();
 			}
-			var getter = opts.get;
+			function ensureActive() {
+				if (!graph.hasDependents(id)) {
+					// nothing was observing before, so create our node in the graph
+					recompute();
+				}
+			}
+
+			var getter = function() {
+				return opts.get.call(opts.ctx);
+			};
 			wrapper.get = function() {
-				accessed({
-					onChange: wrapper.onChange,
-					offChange: wrapper.offChange,
-					computeName: wrapper.computeName,
-					graph: wrapper.graph,
-					track: wrapper.track,
-					onDirty: monitor.onDirty,
-					offDirty: monitor.offDirty,
-				}, id);
-				// if currently bound, use the cached value
-				return !batch && monitor.bound ? monitor.value :
-					getter.call(opts.ctx);
+				if (accessed) {
+					ensureActive();
+					accessed(id);
+				}
+				return wrapper.peek();
+			};
+
+			wrapper.peek = function() {
+				var n = graph.nodeData(id);
+				return n.has("cachedValue") ? n.get("cachedValue") : getter();
 			};
 
 			var setter = opts.set;
@@ -411,45 +266,55 @@
 				return setter.call(opts.ctx, newValue);
 			};
 
-			wrapper.onChange = function(listener, key) {
-				// once we have listeners, we need to monitor any computes
-				// our value depends on
-				listeners.add(listener, key);
-				if (!monitor.bound) {
-					monitor.recompute();
-				}
+			var isEqual = opts.isEqual || function(oldVal, newVal) {
+				return oldVal === newVal;
+			};
+
+			function rmDep(dep) {
+				graph.noLongerDependsOn(id, dep);
+			}
+
+			// recompute ensures that the graph is updated with our most 
+			// current value and dependencies
+			function recompute() {
+				var n = graph.nodeData(id);
+				var oldDeps = graph.dependencies(id);
+				var newDeps = [];
+				var lastAccess = accessed;
+				accessed = function(id) {
+					newDeps.push(id);
+				};
+				var oldVal = n.get("cachedValue");
+				var newVal = record(getter);
+				n.set("recompute", recompute);
+				n.set("cachedValue", newVal);
+				n.set("onNoDependents", function() {
+					graph.dependencies(id).forEach(rmDep);
+				});
+				n.set("name", wrapper.computeName);
+
+				_.difference(oldDeps, newDeps).forEach(rmDep);
+				newDeps.forEach(function(dep) {
+					graph.dependsOn(id, dep);
+				});
+				accessed = lastAccess;
+
+				return !isEqual(oldVal, newVal);
+			}
+
+			wrapper.onChange = function(listener) {
+				ensureActive();
+				var key = listenerKey(listener, id);
+				graph.dependsOn(key, id);
+				graph.nodeData(key).set("listener", listener);
 			};
 			wrapper.offChange = function(listener) {
-				listeners.remove(listener);
-				if (!listeners.length) {
-					monitor.unbind();
-				}
-			};
-
-			// the monitor is responsible for watching all the computes we use
-			// and notifying us when we recompute
-			var monitor = new Monitor(function() {
-				return getter.call(opts.ctx);
-			}, record, function(oldVal, newVal) {
-				afterBatch(listeners, oldVal, newVal);
-			}, opts);
-
-
-			wrapper.__listeners = listeners;
-			wrapper.__monitor = monitor;
-			wrapper.track = function() {
-				if (!monitor.bound) {
-					monitor.recompute();
-				}
+				graph.noLongerDependsOn(listenerKey(listener, id), id);
 			};
 
 			wrapper.cid = id;
 
 			wrapper.computeName = opts.name || opts.get.name || id;
-
-			wrapper.graph = function() {
-				return monitor.graph();
-			};
 
 			return wrapper;
 		}
@@ -472,66 +337,112 @@
 				value: c
 			}));
 		}
+		make.startBatch = function() {
+			if (!batchDepth) {
+				batch = new Batch(graph);
+			}
+			batchDepth++;
+		};
+		make.rollback = function() {
+			if (!batch) {
+				throw new Error("No batch to roll back!");
+			}
+			batch.rollback();
+			batch = null;
+			batchDepth = 0;
+		};
+		make.createTransaction = function() {
+			var txBatch = new Batch(graph).tx();
+			var oldBatch = batch;
+			batch = txBatch;
+			return {
+				commit: function() {
+					batch = oldBatch;
+					txBatch.commit();
+				},
+				rollback: function() {
+					batch = oldBatch;
+					txBatch.rollback();
+				},
+			};
+		};
+		make.endBatch = function() {
+			if (batchDepth <= 0) {
+				throw new Error("Not in batch!");
+			}
+
+			batchDepth--;
+
+			if (!batchDepth) {
+				var b = batch;
+				batch = null;
+				b.send();
+			}
+		};
 		make.value = function(opts) {
 			opts = opts && opts.hasOwnProperty("value") ? opts : {
 				value: opts,
 			};
 			return valueCompute(opts);
 		};
-		make.startBatch = function() {
-			batchDepth++;
-			batch = batch || new Batch();
-		};
-		make.endBatch = function() {
-			batchDepth--;
-			if (batchDepth < 0) {
-				throw new Error("No current batch");
-			}
-			if (!batchDepth) {
-				var b = batch;
-				// XXX null out batch before sending so computes will notify
-				batch = null;
-				b.send();
-			}
-		};
 
 		var connected = [];
-		make.connect = function(api) {
-			connected.push(api);			
+		function record(fn) {
+			var result;
+			// Provide each connected compute with an access function that 
+			// creates a node in the graph that behaves like a value compute.
+			connected.reduce(function(fn, connected) {
+				return function() {
+					connected.record(fn, function(api, id) {
+						var name = "connected:" + connected.name + ":" + (api.computeName || id);
+						var cid = "connected_" + connected.name + "_" + id;
+
+						function update() {
+							afterBatch(cid, true, false);
+						}
+
+						var n = graph.nodeData(cid);
+						// if we already have a node for the connected compute,
+						// there is no need to observe it a second time
+						if (!n.has("onRemove")) {						
+							n.set("name", name);
+							n.set("onRemove", function() {
+								api.offChange(update);
+							});
+							api.onChange(update);
+						}
+
+						accessed(cid);
+					});
+				};
+			}, function() { result = fn(); })();
+			return result;
+		}
+		make.connect = function(c) {
+			connected.push(c);
 		};
 
-		/**
-		 * Debugging helper. Creates a GraphViz graph of the given computes.
-		 */
-		make.vizualize = function() {
-			var nodes = {};
-			function flatDeps(graph, depsOf) {
-				var keys = Object.keys(graph);
-				nodes[depsOf] = nodes[depsOf] || graph.name;
-				return _.flatten(keys.map(function(id) {
-					var deps = [depsOf + " -> " + id + ";"];
-					nodes[id] = nodes[id] || graph[id].name;
-					if (graph[id].dependencies) {
-						return deps.concat(
-							flatDeps(graph[id].dependencies, id));
-					}
-					return deps;
-				}));
-			}
-			var deps = _.flatten(_.toArray(arguments).map(function(c) {
-				nodes[c.cid] = c.computeName;
-				return flatDeps(c.graph(), c.cid);
-			}));
+		make.graph = function() {
+			return graph.toJSON();
+		};
 
-			deps.sort();
-			var nodeNames = Object.keys(nodes).map(function(id) {
-				return id + '[label="' + nodes[id] + '\\n(' + id + ')"];';
-			}).sort();
+		make.vizualize = function(g) {
+			g = g || make.graph();
+			var lines = [];
+			function quote(s) { return '"' + s.replace(/"/g, '&quot;') + '"'; }
+			_.each(g, function(node, id) {
+				if (node.name) {
+					var label = node.name + "\\n(" + id + ")";
+					lines.push(quote(id) + '[label=' + quote(label) + '];');
+				}
 
-			return "strict digraph dependencies {\n" +
-				nodeNames.join("\n") + "\n" +
-				deps.join("\n") +
-			"\n}";
+				_.each(node.dependencies || [], function(t, depId) {
+					lines.push(quote(id) + " -> " + quote(depId) + ";");
+				});
+			});
+			lines.sort();
+			return "strict digraph dependencies {\n\t" +
+				lines.join("\n\t") + "\n}";
 		};
 
 		return make;
@@ -544,6 +455,380 @@
 	module.exports = defaultSpace;
 })(this);
 
-},{"./_":1}]},{},[2])
+},{"./_":1,"./graph":3,"./string-collections":4}],3:[function(_dereq_,module,exports){
+(function() {
+	"use strict";
+
+	var _ = _dereq_("./_");
+	var asArray = _dereq_("./string-collections").asArray;
+	var asObject = _dereq_("./string-collections").asObject;
+	var Map = _dereq_("./string-collections").Map;
+	var Set = _dereq_("./string-collections").Set;
+	var MapWrapper = _dereq_("./string-collections").MapWrapper;
+
+	function defaultMap(makeDefault) {
+		function DefaultMap(iterable) {
+			MapWrapper.call(this, new Map(iterable));
+		}
+
+		DefaultMap.prototype = new MapWrapper();
+		DefaultMap.constructor = DefaultMap;
+
+		DefaultMap.prototype.get = function(key) {
+			if (!this.has(key)) {
+				this.set(key, makeDefault.call(this, key));
+			}
+			return this.map.get(key);
+		};
+		return DefaultMap;
+	}
+
+	var SetMap = defaultMap(function() {
+		return new Set();
+	});
+
+	var MapMap = defaultMap(function() {
+		return new Map();
+	});
+
+	// strict digraph, no edge weights. O(1) non-traversal operations
+	// data added to nodes will be removed when the node is no longer 
+	// connected to the graph
+	function Graph() {
+		this._dependsOn = new SetMap();
+		this._dependedOnBy = new SetMap();
+		this._nodeData = new MapMap();
+	}
+
+	function dfs(graph, node, visited, visitor) {
+		visited = visited || new Set();
+		visited.add(node);
+		graph.get(node).forEach(function(next) {
+			if (!visited.has(next)) {
+				dfs(graph, next, visited, visitor);
+			}
+		});
+		visitor(node);
+		return visited;
+	}
+
+	function clean(graph, name) {
+		var tearDown = graph._nodeData.get(name).get("onRemove");
+		if (tearDown) {
+			tearDown();
+		}
+		graph._dependsOn.delete(name);
+		graph._dependedOnBy.delete(name);
+		graph._nodeData.delete(name);
+	}
+
+	// an anonymous node is one that doesn't have any incoming edges
+	// (no other node knows about/depends on it)
+	function cleanAnonymous(graph, name) {
+		var tearDown = graph._nodeData.get(name).get("onNoDependents");
+		if (tearDown) {
+			tearDown();
+		}
+	}
+
+	_.extend(Graph.prototype, {
+		// TODO check for cycles in dev mode
+		dependencyOrder: function(nodes) {
+			// first we need to find all the nodes that depend on the given nodes
+			var dependents = nodes.reduce(function(visited, node) {
+				return dfs(this._dependedOnBy, node, visited, function() {});
+			}.bind(this), new Set());
+
+			// then run the topological sort algorithm to get a dependency ordering
+			// (which guarantees that all a node's dependencies come before it)
+			var visited = new Set();
+			var finished = [];
+			dependents.forEach(function(node) {
+				if (!visited.has(node)) {
+					dfs(this._dependsOn, node, visited, function(doneNode) {
+						finished.push(doneNode);
+					});
+				}
+			}, this);
+
+			return finished;
+		},
+		nodeData: function(name) {
+			return this._nodeData.get(name);
+		},
+		noLongerDependsOn: function(name, dependency) {
+			var dependsOn = this._dependsOn.get(name);
+			var dependendOnBy = this._dependedOnBy;
+			dependsOn.delete(dependency);
+			var incoming = dependendOnBy.get(dependency);
+			incoming.delete(name);
+			
+			// cleanup node data
+			if (!dependsOn.size && !dependendOnBy.get(name).size) {
+				clean(this, name);
+			} 
+			if (!incoming.size) {
+				cleanAnonymous(this, dependency);
+				if (!this._dependsOn.get(dependency).size) {
+					clean(this, dependency);
+				}
+			}
+		},
+		hasDependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
+			var dependents = dependendOnBy.get(name);
+			return dependents.size > 0;
+		},
+		dependsOn: function(name, dependency) {
+			var dependsOn = this._dependsOn.get(name);
+			var dependendOnBy = this._dependedOnBy;
+			dependsOn.add(dependency);
+			dependendOnBy.get(dependency).add(name);
+			return this;
+		},
+		dependencies: function(name) {
+			var dependsOn = this._dependsOn.get(name);
+			return asArray(dependsOn);
+		},
+		dependents: function(name) {
+			var dependendOnBy = this._dependedOnBy;
+			var dependents = dependendOnBy.get(name);
+			return asArray(dependents);
+		},
+		toJSON: function() {
+			var result = {};
+			var data = function(node) {
+				return asObject(this._nodeData.get(node) || {});
+			}.bind(this);
+			this._dependsOn.forEach(function(deps, node) {
+				result[node] = _.extend(data(node), {
+					dependencies: asArray(deps).reduce(function(deps, dep) {
+						result[dep] = result[dep] || data(dep);
+						deps[dep] = true;
+						return deps;
+					}, {}),
+				});
+			}, this);
+			return result;
+		},
+	});
+
+	module.exports = Graph;
+})();
+},{"./_":1,"./string-collections":4}],4:[function(_dereq_,module,exports){
+(function() {
+	"use strict";
+
+	function assertString(value, name) {
+		if (typeof value !== "string") {
+			throw new TypeError(name + " is not a string! : " + value);
+		}
+	}
+
+	function asArray(iterable) {
+		var result = [];
+		(iterable || []).forEach(function(value) {
+			result.push(value);
+		});
+		return result;
+	}
+
+	function asObject(iterable) {
+		var result = {};
+		(iterable || []).forEach(function(value, key) {
+			result[key] = value;
+		});
+		return result;
+	}
+
+	// define shims for Map and Sets. Our versions only support string
+	// keys in Map and string values in sets.
+	var global = (function() {
+		/*jshint evil:true */
+		return new Function("return this;");
+	})()();
+
+
+	// Chrome's Set and Map do not create entries from the argument
+	function shimMap(Map) {
+		var map = new Map([
+			["uses", "array"],
+			["to", "constructor"],
+		]);
+
+		if (map.get("uses") !== "array") {
+			return function(iterable) {
+				var m = new Map();
+				asArray(iterable).forEach(function(pair) {
+					m.set(pair[0], pair[1]);
+				});
+				return m;
+			};
+		}
+
+		return Map;
+	}
+
+	function shimSet(Set) {
+		var set = new Set("uses", "array", "to", "constructor");
+
+		if (set.size !== 4 || !set.has("to")) {
+			return function(iterable) {
+				var s = new Set();
+				asArray(iterable).forEach(function(value) {
+					s.add(value);
+				});
+				return s;
+			};
+		}
+
+		return Set;
+	}
+
+	var Map = (function() {
+		// XXX the Chrome 36 implementation of Sets somehow is inserting 
+		// undefineds (despite never calling add() with undefined)
+		// May be a bug in the Map
+		// if (global.Map) {
+		// 	return shimMap(global.Map);
+		// }
+
+		function Map(iterable) {
+			Object.defineProperty(this, "__store", {
+				configurable: false,
+				enumerable: false,
+				value: asArray(iterable).reduce(function(store, pair) {
+					store[pair[0]] = store[pair[1]];
+					return store;
+				}, {}),
+				writeable: true,
+			});
+			this.size = Object.keys(this.__store).length;
+		}
+
+		Map.prototype.get = function(key) {
+			assertString(key, "Map.get(key)");
+			return this.__store[key];
+		};
+		Map.prototype.set = function(key, value) {
+			assertString(key, "Map.set(key)");
+			if (!this.has(key)) {
+				this.size++;
+			}
+			this.__store[key] = value;
+		};
+		Map.prototype.has = function(key) {
+			assertString(key, "Map.has(key)");
+			return key in this.__store;
+		};
+		Map.prototype.delete = function(key) {
+			assertString(key, "Map.delete(key)");
+			if (this.has(key)) {
+				this.size--;
+			}
+			delete this.__store[key];
+		};
+		Map.prototype.clear = function() {
+			this.size = 0;
+			this.__store = {};
+		};
+
+		Map.prototype.forEach = function(iterator, context) {
+			return Object.keys(this.__store).forEach(function(key) {
+				iterator.call(context, this.get(key), key, this);
+			}, this);
+		};
+
+		return Map;
+	})();
+
+	var Set = (function() {
+		// XXX the Chrome 36 implementation of Sets somehow is inserting 
+		// undefineds (despite never calling add() with undefined)
+		// may be a bug in the Map
+		// if (global.Set) {
+		// 	return shimSet(global.Set);
+		// }
+
+		function Set(iterable) {
+			Object.defineProperty(this, "__store", {
+				configurable: false,
+				enumerable: false,
+				value: new Map(asArray(iterable).map(function(key) {
+					return [key, true];
+				})),
+				writeable: true,
+			});		
+		}
+
+		Set.prototype.add = function(key) {
+			assertString(key, "Set.add(key)");
+			this.__store.set(key, true);
+			return this;
+		};
+		Set.prototype.clear = function() {
+			this.__store = new Map();
+		};
+		Set.prototype.delete = function(key) {
+			assertString(key, "Set.delete(key)");
+			this.__store.delete(key);
+		};
+		Set.prototype.has = function(key) {
+			assertString(key, "Set.has(key)");
+			return this.__store.has(key);
+		};
+
+		Set.prototype.forEach = function(iterator, context) {
+			this.__store.forEach(function(on, key) {
+				iterator.call(context, key, key, this);
+			}, this);
+		};
+
+		Object.defineProperties(Set.prototype, {
+			size: {
+				get: function() {
+					return this.__store.size;
+				},
+			},
+		});
+
+		return Set;
+	})();
+
+	var wrapMethods = [
+		"get",
+		"set",
+		"has",
+		"delete",
+		"clear",
+		"forEach",
+	];
+	var wrapProps = ["size"];
+	function MapWrapper(map) {
+		this.map = map || new Map();
+	}
+	wrapMethods.forEach(function(method) {
+		this[method] = function() {
+			return this.map[method].apply(this.map, arguments);
+		};
+	}, MapWrapper.prototype);
+	wrapProps.forEach(function(prop) {
+		Object.defineProperty(this, prop, {
+			get: function() {
+				return this.map[prop];
+			},
+		});
+	}, MapWrapper.prototype);
+
+	module.exports = {
+		asArray: asArray,
+		asObject: asObject,
+		Map: Map,
+		Set: Set,
+		MapWrapper: MapWrapper,
+	};
+})();
+
+},{}]},{},[2])
 (2)
 });
