@@ -89,7 +89,7 @@ string() === "hello"
 
 ## Custom Equality
 
-A compute notifies it's `onChange` listeners when it's computed value changes. If a compute recomputes but the value does not change, then there will be no notifications.
+A compute notifies its `onChange` listeners when its computed value changes. If a compute recomputes but the value does not change, then there will be no notifications.
 
 Some computes will return an object or an array or other complex object. Most likely `===` will not be sufficient to determine if the new and old value are equivalent. In those situations, you can pass a custom equality function:
 
